@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Числовые выражения</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 16, title: 'Числовые выражения', minutes: 9, language: 'ru', next: '../ch17/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: the first number is pink (COL.rat), the second orange (COL.task),
+// the expression as a whole is blue (COL.whole), its value and the right sign are green (COL.good).
+const PA = COL.rat, PB = COL.task, EX = COL.whole, VAL = COL.good;
+// A row of hidden math tokens: items are strings or [string, colour]. Returns the row (tokens carry _px, _w).
+function c16_row(p, items, x, y, size = 64, anchor = 'middle') {
+  return tokens(p, items.map(it => Array.isArray(it) ? { t: it[0], fill: it[1] } : it), { x, y, size, anchor, o: 0 });
+}
+const c16_left = row => row[0]._px - row[0]._w / 2;
+const c16_right = row => row[row.length - 1]._px + row[row.length - 1]._w / 2;
+// n dots in a row starting at x (centres 34 px apart). Hidden; returns the circles.
+function c16_dots(p, x, y, n, colr, step = 34, r = 13) {
+  return Array.from({ length: n }, (_, i) => { const c = mk('circle', { cx: 0, cy: 0, r, fill: colr }, p); return put(c, { x: x + i * step, y, o: 0 }); });
+}
+// A dot that is taken away: it turns into an outline and gets a slash.
+function c16_takeAway(p, dot, t0) {
+  const { x, y } = st(dot);
+  tw(dot, { o: .25 }, t0, .3);
+  draw(path(p, `M${x - 16} ${y + 16}L${x + 16} ${y - 16}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), t0 + .1, .3);
+}
+// Two expressions with an empty circle between them (the sign is chosen later). Returns { L, R, slot, x, y, size }.
+function c16_cmp(p, left, right, x, y, t0, tr = t0, size = 64) {
+  const L = c16_row(p, left, x - 70, y, size, 'end'), Rr = c16_row(p, right, x + 70, y, size, 'start');
+  L.forEach(e => show(e, t0)); Rr.forEach(e => show(e, tr));
+  const slot = mk('circle', { cx: x, cy: y - size * .32, r: size * .34, fill: 'none', stroke: COL.dim, 'stroke-width': 3 }, p);
+  put(slot, { o: 0 }); show(slot, t0);
+  return { L, R: Rr, slot, x, y, size };
+}
+// Put a sign into the circle of a comparison.
+function c16_sign(p, c, sign, t0, colr = VAL) {
+  hide(c.slot, t0, .2);
+  const s = M(p, [sign], { x: c.x, y: c.y, size: c.size * 1.05, fill: colr, o: 0 });
+  put(s, { s: .4 }); pop(s, t0 + .2);
+  return s;
+}
+// Dots on a balance pan (pan coordinates): groups = [[n, colour], …]; the expression is written under the pan.
+function c16_pan(pan, groups, label, t0) {
+  const g = G(pan, { o: 0 });
+  const n = groups.reduce((a, [k]) => a + k, 0);
+  let i = 0;
+  for (const [k, colr] of groups) for (let j = 0; j < k; j++, i++) mk('circle', { cx: (i - (n - 1) / 2) * 34, cy: 94, r: 14, fill: colr }, g);
+  M(g, [label], { y: 205, size: 46 });
+  show(g, t0);
+  return g;
+}
+// A small car seen from the side, drawn around (0, 0). Hidden.
+function c16_car(p, x, y, colr) {
+  const g = G(p, { x, y, o: 0 });
+  path(g, 'M-42 12V-8Q-42 -14 -34 -14H-20L-10 -32H22L34 -14H38Q44 -14 44 -6V12Z', { fill: colr, 'fill-opacity': .75, stroke: colr, 'stroke-width': 2 });
+  path(g, 'M-6 -27H6V-15H-15ZM10 -27H19L27 -15H10Z', { fill: COL.board, 'fill-opacity': .7 });
+  for (const cx of [-24, 26]) mk('circle', { cx, cy: 13, r: 10, fill: COL.board, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  return g;
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Числовые выражения', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 16', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Числовые выражения', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'читаем, записываем, сравниваем', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['what', 'Что такое выражение', (m) => {
+    const p = panel(0);
+    text(p, 'Прочитай записи.', 800, 110, .2, { size: 32, fill: COL.dim, anchor: 'middle' });
+    const recs = [['9 + 7', 330, 210, m('r1')], ['23 − 3', 330, 290, m('r2')],
+      ['30 + 6 + 1', 800, 210, m('more')], ['15 − 7 + 3', 800, 290, m('more', .4)],
+      ['18 − (4 + 6)', 1270, 210, m('more', .8)], ['25 − (15 − 10)', 1270, 290, m('more', 1.2)]];
+    const els = recs.map(([s, x, y, t0]) => mline(p, s, x, y, t0, COL.chalk, 50));
+    const frame = mk('rect', { x: 130, y: 150, width: 1340, height: 180, rx: 18, fill: EX, 'fill-opacity': .06, stroke: EX, 'stroke-width': 3 }, p);
+    put(frame, { o: 0 }); show(frame, m('name'));
+    text(p, 'числовые выражения', 800, 385, m('name', .3), { size: 38, fill: EX, anchor: 'middle', weight: 700 });
+    text(p, 'или просто выражения', 800, 428, m('name', 2), { size: 28, fill: COL.dim, anchor: 'middle' });
+    pulse(els[0], m('ex'), 1.25);
+    // 9 + 7 big, with dots under it: 42 px per dot
+    const row = c16_row(p, [['9', PA], ' + ', ['7', PB]], 760, 570, 80, 'end');
+    row.forEach(e => show(e, m('ex', .3)));
+    const pink = c16_dots(p, 480, 740, 9, PA, 42, 16), orange = c16_dots(p, 900, 740, 7, PB, 42, 16);
+    pink.forEach((d, i) => show(d, m('ex', .5) + i * .05, .3));
+    orange.forEach((d, i) => show(d, m('ex', .9) + i * .05, .3));
+    orange.forEach(d => tw(d, { x: st(d).x - 42 }, m('do'), .6));
+    const vx = c16_right(row) + 80;
+    text(p, '= ', vx - 32, 570, m('val'), { size: 80, fill: COL.chalk, anchor: 'middle' });
+    text(p, '16', vx, 570, m('val'), { size: 80, fill: VAL, weight: 700 });
+    uBracket(p, c16_left(row), c16_right(row), 600, '', EX, m('vname'));
+    text(p, 'выражение', c16_right(row) - 10, 660, m('vname', .2), { size: 28, fill: EX, anchor: 'end', weight: 600 });
+    uBracket(p, vx - 2, vx + 90, 600, '', VAL, m('vname', .9));
+    text(p, 'значение выражения', vx, 660, m('vname', 1.1), { size: 28, fill: VAL, weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 110, 200, .2, { size: 30, fill: COL.dim });
+    mline(p, '9 + 7 = 16', 110, 290, .3, COL.chalk, 50, 'start');
+    text(p, 'значение', 330, 340, .4, { size: 24, fill: VAL, weight: 600 });
+    text(p, 'Действие в скобках', 110, 440, .5, { size: 28, fill: COL.dim });
+    text(p, 'выполняют первым.', 110, 478, .5, { size: 28, fill: COL.dim });
+  }, { ask: done => quiz({ x: 560, y: 80, w: 960, cls: 'side' }, [{
+    id: 'c-value', prompt: ['Найди значения выражений.'],
+    build: blanks([
+      { parts: ['23 − 3 = ', { box: '20' }], why: 'Из 23 вычли 3 единицы — осталось 2 десятка: 20.', hint: '23 — это 2 десятка и 3 единицы. Убери 3 единицы.' },
+      { parts: ['30 + 6 + 1 = ', { box: '37' }], why: '30 + 6 = 36, 36 + 1 = 37.', hint: 'Действуй по порядку, слева направо: сначала 30 + 6.' },
+      { parts: ['15 − 7 + 3 = ', { box: '11' }], why: '15 − 7 = 8, 8 + 3 = 11.', hint: 'Слева направо: сначала 15 − 7, потом прибавь 3.' },
+      { parts: ['18 − (4 + 6) = ', { box: '8' }], why: 'В скобках 4 + 6 = 10, потом 18 − 10 = 8.', hint: 'Сначала действие в скобках: 4 + 6.' },
+      { parts: ['25 − (15 − 10) = ', { box: '20' }], why: 'В скобках 15 − 10 = 5, потом 25 − 5 = 20.', hint: 'Сначала действие в скобках: 15 − 10.' },
+    ]),
+  }], done) }],
+
+  ['read', 'Как читать выражения', (m) => {
+    const p = panel(0);
+    // the sum
+    const A = c16_row(p, [['8', PA], ' + ', ['5', PB]], 160, 230, 80, 'start');
+    A.forEach((e, i) => show(e, .3 + i * .2));
+    uBracket(p, c16_left(A), c16_right(A), 268, 'сумма', EX, m('sum'), { size: 34 });
+    text(p, '«Сумма чисел 8 и 5»', 720, 225, m('say'), { size: 42, weight: 600 });
+    text(p, '= ', c16_right(A) + 48, 230, m('val'), { size: 80, anchor: 'middle' });
+    text(p, '13', c16_right(A) + 80, 230, m('val'), { size: 80, fill: VAL, weight: 700 });
+    text(p, 'значение суммы — 13', 720, 300, m('val', .4), { size: 30, fill: VAL, weight: 600 });
+    draw(path(p, 'M120 410H1480', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('minus', -.5), .6);
+    // the difference
+    const B = c16_row(p, [['30', PA], ' − ', ['20', PB]], 160, 560, 80, 'start');
+    B.forEach((e, i) => show(e, m('minus') + i * .25));
+    uBracket(p, c16_left(B), c16_right(B), 598, 'разность', EX, m('diff'), { size: 34 });
+    text(p, '«Разность чисел 30 и 20»', 720, 555, m('msay'), { size: 42, weight: 600 });
+    text(p, '= ', c16_right(B) + 48, 560, m('mval'), { size: 80, anchor: 'middle' });
+    text(p, '10', c16_right(B) + 80, 560, m('mval'), { size: 80, fill: VAL, weight: 700 });
+    text(p, 'значение разности — 10', 720, 630, m('mval', .4), { size: 30, fill: VAL, weight: 600 });
+  }],
+
+  ['compose', 'Записываем выражение', (m) => {
+    const p = panel(0);
+    // the words, coloured like the parts of the expression
+    const words = [['Из числа 16', COL.chalk, 'w1'], ['  вычесть  ', COL.chalk, 'w2'], ['разность чисел 9 и 7', PB, 'w3']];
+    const ws = words.map(([s]) => uiW(s, 40));
+    let wx = 800 - ws.reduce((a, b) => a + b, 0) / 2;
+    words.forEach(([s, colr, mark], i) => { text(p, s, wx, 140, i ? m(mark) : .2, { size: 40, fill: colr, weight: 600 }); wx += ws[i]; });
+    const Y = 340;
+    const A = c16_row(p, ['16', ' − ', ['9 − 7', PB]], 800, Y, 80);
+    const B = c16_row(p, ['16', ' − ', ['(', PB], ['9 − 7', PB], [')', PB]], 800, Y, 80);
+    show(A[0], m('w1', .2)); show(A[1], m('w2', .2)); show(A[2], m('w3', .4));
+    // the mistake: no brackets
+    const z = text(p, '= 0', c16_right(A) + 30, Y, m('wrong', 4.2), { size: 80, fill: COL.bad, weight: 700 });
+    const note = text(p, '16 − 9 = 7,   7 − 7 = 0', 800, 440, m('wrong', 1.5), { size: 34, fill: COL.bad, anchor: 'middle' });
+    const cross = path(p, `M${c16_left(A) - 16} ${Y - 10}L${c16_right(A) + 160} ${Y - 46}`, { stroke: COL.bad, 'stroke-width': 6 }, { d: 0 });
+    draw(cross, m('wrong', 5.6), .4);
+    for (const e of [z, note, cross]) hide(e, m('one'), .4);
+    // the difference is one number: brace it, then put it in brackets
+    const br = G(p);
+    uBracket(br, A[2]._px - A[2]._w / 2, A[2]._px + A[2]._w / 2, Y + 36, 'одно число', PB, m('one', .3), { size: 30 });
+    A.forEach((e, i) => tw(e, { x: B[[0, 1, 3][i]]._px }, m('br'), .6));
+    tw(br, { x: B[3]._px - A[2]._px }, m('br'), .6);
+    show(B[2], m('br', .5)); show(B[4], m('br', .5));
+    mline(p, '9 − 7 = 2', 800, 560, m('calc'), PB, 56);
+    mline(p, '16 − 2 = 14', 800, 650, m('val'), COL.chalk, 56);
+    text(p, '= ', c16_right(B) + 48, Y, m('val', 1.2), { size: 80, anchor: 'middle' });
+    text(p, '14', c16_right(B) + 80, Y, m('val', 1.2), { size: 80, fill: VAL, weight: 700 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'сумма чисел 8 и 5', 100, 190, .2, { size: 28, fill: COL.dim });
+    mline(p, '8 + 5', 100, 250, .3, COL.chalk, 48, 'start');
+    text(p, 'разность чисел 9 и 7', 100, 350, .4, { size: 28, fill: COL.dim });
+    mline(p, '9 − 7', 100, 410, .5, COL.chalk, 48, 'start');
+    text(p, 'вычесть разность:', 100, 510, .6, { size: 28, fill: COL.dim });
+    mline(p, '16 − (9 − 7)', 100, 570, .7, COL.chalk, 48, 'start');
+  }, { ask: done => quiz({ x: 580, y: 80, w: 940, cls: 'side' }, [{
+    id: 'c-write', prompt: ['Как записать выражение: «к числу 10 прибавить разность чисел 7 и 5»?'],
+    build: choice([['10 + (7 − 5)'], ['10 + 7 + 5'], ['10 − (7 − 5)']], 0,
+      'Прибавляем — знак «+». Разность чисел 7 и 5 — одно число, поэтому она в скобках: 10 + (7 − 5).',
+      [null, 'Здесь к 10 прибавили и 7, и 5. А прибавить нужно разность чисел 7 и 5 — запиши её в скобках: (7 − 5).',
+       'Сказано «прибавить» — значит, нужен знак «+», а не «−».']),
+  }, {
+    id: 'c-write-val', prompt: ['Теперь найди значение этого выражения.'],
+    build: blanks([{ parts: ['10 + (7 − 5) = ', { box: '12' }], why: 'В скобках 7 − 5 = 2, потом 10 + 2 = 12.', hint: 'Сначала найди разность в скобках: 7 − 5.' }]),
+  }], done) }],
+
+  ['scales', 'Сравниваем на весах', (m) => {
+    const p = panel(0);
+    const b = balance(p, { x: 480, y: 230, L: 250 });
+    show(b.g, .2, .5);
+    const l1 = c16_pan(b.L, [[3, PA], [1, PB]], '3 + 1', m('l1'));
+    const r1 = c16_pan(b.R, [[3, PA]], '3', m('r1'));
+    b.tilt(7, m('t1'));
+    const s1 = c16_row(p, ['3 + 1', [' > ', VAL], '3'], 1180, 270, 60);
+    s1.forEach(e => show(e, m('w1')));
+    const s1b = c16_row(p, ['4', [' > ', VAL], '3'], 1180, 345, 50);
+    s1b.forEach(e => show(e, m('w1', 2.5)));
+    hide(l1, m('l2', -.5), .4); hide(r1, m('l2', -.5), .4);
+    b.tilt(0, m('l2', -.3));
+    c16_pan(b.L, [[2, PA], [3, PB]], '2 + 3', m('l2'));
+    c16_pan(b.R, [[1, PA], [4, PB]], '1 + 4', m('r2'));
+    const s2 = c16_row(p, ['2 + 3', [' = ', VAL], '1 + 4'], 1180, 480, 60);
+    s2.forEach(e => show(e, m('w2')));
+    const s2b = c16_row(p, ['5', [' = ', VAL], '5'], 1180, 555, 50);
+    s2b.forEach(e => show(e, m('w2', .8)));
+    text(p, 'Сравнить выражения — значит сравнить их значения.', 800, 760, m('rule'), { size: 38, anchor: 'middle', weight: 600 });
+    draw(path(p, 'M340 785H1260', { stroke: VAL, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['compare', 'Сначала значения', (m) => {
+    const p = panel(0);
+    const c = c16_cmp(p, [['5', PA], ' − ', ['2', PB]], [['1', PA], ' + ', ['4', PB]], 800, 200, .3, .6, 72);
+    // the trap: comparing only the first numbers
+    const rings = [c.L[0], c.R[0]].map(e => {
+      const r = mk('circle', { cx: e._px, cy: c.y - 24, r: 34, fill: 'none', stroke: COL.bad, 'stroke-width': 4 }, p);
+      put(r, { o: 0 }); show(r, m('trap')); hide(r, m('lv', -.6), .4);
+      return r;
+    });
+    void rings;
+    const bw = uiW('5 > 1, значит, первое больше?', 38);
+    const bad = text(p, '5 > 1, значит, первое больше?', 800, 320, m('trap', .8), { size: 38, fill: COL.bad, anchor: 'middle', weight: 600 });
+    const bs = path(p, `M${800 - bw / 2 - 14} 312L${800 + bw / 2 + 14} 300`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+    draw(bs, m('trap', 4.4), .4);
+    [bad, bs].forEach(e => hide(e, m('lv', -.6), .4));
+    // the values, with dots
+    const left = c16_dots(p, 540, 420, 5, PA);
+    left.forEach((d, i) => show(d, m('lv') + i * .06, .3));
+    [3, 4].forEach((i, k) => c16_takeAway(p, left[i], m('lv', 1.2) + k * .2));
+    const right = [...c16_dots(p, 912, 420, 1, PA), ...c16_dots(p, 946, 420, 4, PB)];
+    right.forEach((d, i) => show(d, m('rv') + i * .06, .3));
+    text(p, '5 − 2 = 3', 608, 510, m('lv', 2), { size: 40, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    text(p, '1 + 4 = 5', 1014, 510, m('rv', .8), { size: 40, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    const s = c16_row(p, ['3', [' < ', VAL], '5'], 800, 620, 64);
+    s.forEach(e => show(e, m('sign')));
+    c16_sign(p, c, '<', m('sign', .8));
+    text(p, 'Сначала найди значения, потом сравнивай.', 800, 760, m('rule'), { size: 38, anchor: 'middle', weight: 600 });
+  }],
+
+  ['nocalc', 'Без вычислений', (m) => {
+    const p = panel(0);
+    // 5 + 3 and 3 + 5: the same dots, the groups only swap places
+    const a = c16_cmp(p, [['5', PA], ' + ', ['3', PB]], [['3', PB], ' + ', ['5', PA]], 800, 170, .3, .5);
+    const lp = c16_dots(p, 440, 270, 5, PA), lo = c16_dots(p, 610, 270, 3, PB);
+    [...lp, ...lo].forEach((d, i) => show(d, m('a', .3) + i * .04, .3));
+    const rp = c16_dots(p, 920, 270, 5, PA), ro = c16_dots(p, 1090, 270, 3, PB);
+    [...rp, ...ro].forEach((d, i) => show(d, m('a', 1.2) + i * .04, .3));
+    rp.forEach(d => tw(d, { x: st(d).x + 102 }, m('swap', .3), .7));
+    ro.forEach(d => tw(d, { x: st(d).x - 170 }, m('swap', .3), .7));
+    ro.forEach(d => tw(d, { y: 230 }, m('swap', .3), .35, out));
+    ro.forEach(d => tw(d, { y: 270 }, m('swap', .65), .35));
+    c16_sign(p, a, '=', m('eq'));
+    draw(path(p, 'M120 370H1480', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('b', -.5), .6);
+    // 6 − 2 and 6 − 3: the second takes away more
+    const b = c16_cmp(p, [['6', PA], ' − ', ['2', PB]], [['6', PA], ' − ', ['3', PB]], 800, 480, m('b'), m('b', .8));
+    const L = c16_dots(p, 470, 580, 6, PA), Rr = c16_dots(p, 960, 580, 6, PA);
+    L.forEach((d, i) => show(d, m('b', .3) + i * .04, .3));
+    Rr.forEach((d, i) => show(d, m('b', 1) + i * .04, .3));
+    [4, 5].forEach((i, k) => c16_takeAway(p, L[i], m('take', -.6) + k * .2));
+    [3, 4, 5].forEach((i, k) => c16_takeAway(p, Rr[i], m('take', .4) + k * .2));
+    L.slice(0, 4).forEach(d => pulse(d, m('more', 1), 1.3));
+    Rr.slice(0, 3).forEach(d => pulse(d, m('more', 1.4), 1.3));
+    c16_sign(p, b, '>', m('gt'));
+    text(p, 'Вычитаем больше — остаётся меньше.', 800, 720, m('more'), { size: 34, fill: COL.dim, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q3', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 220, y: 50, w: 1160, cls: 'side' }, [{
+    id: 'c-compare', prompt: ['Сравни выражения: поставь знак <, = или >.'],
+    build: grid([
+      { parts: ['7 + 5  ○  5 + 7'], ans: ['eq'], why: 'Те же числа, только поменялись местами: значения равны.' },
+      { parts: ['10 − 3  ○  10 − 4'], ans: ['gt'], why: 'Из 10 во втором выражении вычитаем больше — остаётся меньше: 7 > 6.' },
+      { parts: ['8 + 6  ○  8 + 9'], ans: ['lt'], why: 'К 8 во втором выражении прибавляем больше: 14 < 17.' },
+      { parts: ['9 − 6  ○  2 + 5'], ans: ['lt'], why: '9 − 6 = 3, 2 + 5 = 7, а 3 < 7. Первые числа тут не помогут!' },
+      { parts: ['30 + 6  ○  36 − 6'], ans: ['gt'], why: '30 + 6 = 36, 36 − 6 = 30, а 36 > 30.' },
+      { parts: ['15 − 7  ○  8'], ans: ['eq'], why: '15 − 7 = 8 — это и есть 8.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['task', 'Выражение к задаче', (m) => {
+    const p = panel(0);
+    const shop = mk('rect', { x: 280, y: 180, width: 1040, height: 140, rx: 14, fill: COL.dim, 'fill-opacity': .05, stroke: COL.dim, 'stroke-width': 3 }, p);
+    put(shop, { o: 0 }); show(shop, .2);
+    text(p, 'мастерская', 290, 160, .3, { size: 28, fill: COL.dim });
+    const SX = i => 345 + i * 105;
+    const cars = [...Array(6)].map((_, i) => c16_car(p, SX(i), 262, PA));
+    cars.forEach((c, i) => show(c, m('six', .4) + i * .12, .3));
+    const neu = [6, 7, 8].map(i => c16_car(p, 1750 + (i - 6) * 105, 262, PB));
+    neu.forEach((c, k) => { show(c, m('in'), .2); tw(c, { x: SX(6 + k) }, m('in'), 1.2, out); });
+    [0, 1].forEach(i => { tw(cars[i], { x: -150 + i * 105 }, m('out', .2), 1.2, io); hide(cars[i], m('out', 1), .4); });
+    text(p, 'Сколько машин стало?', 800, 380, m('ask'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    // the textbook's four expressions
+    const xs = [290, 610, 930, 1250];
+    const opts = ['6 − 3 + 2', '6 + 3 + 2', null, '6 − 3 − 2'].map((s, i) => s && mline(p, s, xs[i], 500, m('opts') + i * .25, COL.chalk, 50));
+    const ok = c16_row(p, [['6', PA], [' + 3', PB], ' − 2'], 930, 500, 50);
+    ok.forEach(e => show(e, m('opts', .5)));
+    pulse(ok[0], m('p6'), 1.4); cars.slice(2).forEach(c => pulse(c, m('p6'), 1.12));
+    pulse(ok[1], m('p3'), 1.3); neu.forEach(c => pulse(c, m('p3'), 1.12));
+    pulse(ok[2], m('p2'), 1.3);
+    opts.forEach(e => e && tw(e, { o: .25 }, m('pick'), .5));
+    const fr = mk('rect', { x: c16_left(ok) - 24, y: 445, width: c16_right(ok) - c16_left(ok) + 48, height: 76, rx: 12, fill: 'none', stroke: VAL, 'stroke-width': 4 }, p);
+    put(fr, { o: 0 }); show(fr, m('pick'));
+    mline(p, '6 + 3 − 2 = 7 (м.)', 800, 640, m('val'), COL.chalk, 56);
+    [...cars.slice(2), ...neu].forEach((c, i) => pulse(c, m('ans') + i * .08, 1.15));
+    text(p, 'Ответ: стало 7 машин.', 800, 750, m('ans', .3), { size: 40, fill: VAL, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const box = mk('rect', { x: 80, y: 150, width: 500, height: 230, rx: 8, fill: 'none', stroke: COL.faint, 'stroke-width': 2.5 }, p);
+    put(box, { o: 0 }); show(box, .2);
+    text(p, 'Утром — 6 л', 110, 210, .3, { size: 34, fill: PA });
+    text(p, 'Вечером — ?, на 2 л больше', 110, 275, .4, { size: 30, fill: PB });
+    text(p, 'Вместе — ?', 110, 340, .5, { size: 34, fill: EX });
+  }, { ask: done => quiz({ x: 600, y: 70, w: 920, cls: 'side' }, [{
+    id: 'c-milk', prompt: ['Утром надоили от коровы 6 л молока, а вечером — на 2 л больше. Сколько литров молока надоили утром и вечером вместе? Какое выражение подходит к задаче?'],
+    build: choice([['6 + (6 + 2)'], ['6 + 2'], ['6 + 6 − 2']], 0,
+      'Вечером надоили 6 + 2 литра, а вместе с утренними 6 литрами: 6 + (6 + 2).',
+      [null, '6 + 2 — это сколько надоили только вечером. А спрашивают, сколько утром и вечером вместе.',
+       '«На 2 л больше» — значит, вечером 6 + 2, а не 6 − 2.']),
+  }, {
+    id: 'c-milk-val', prompt: ['Найди значение выражения и ответь на вопрос задачи.'],
+    build: blanks([{ parts: ['6 + (6 + 2) = ', { box: '14' }, ' (л)'], why: 'Вечером 6 + 2 = 8 л, вместе 6 + 8 = 14 л.', hint: 'Сначала скобки: 6 + 2. Потом прибавь утренние 6 л.' }]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 150, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['9 + 7,  18 − (4 + 6) — числовые выражения.', 'w1'],
+     ['9 + 7 = 16:  16 — значение выражения.', 'w2'],
+     ['8 + 5 — сумма,  30 − 20 — разность.', 'w3'],
+     ['Чтобы сравнить выражения, сравни их значения.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 270 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 40, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-compare', prompt: ['Сравни выражения: поставь знак <, = или >.'],
+    build: grid([
+      { parts: ['9 + 6  ○  6 + 9'], ans: ['eq'], why: 'Те же числа, поменялись местами: значения равны.' },
+      { parts: ['14 − 5  ○  14 − 7'], ans: ['gt'], why: 'Во втором выражении вычитаем больше — остаётся меньше: 9 > 7.' },
+      { parts: ['7 + 8  ○  7 + 9'], ans: ['lt'], why: 'Во втором выражении прибавляем больше: 15 < 16.' },
+      { parts: ['20 − 6  ○  10 + 5'], ans: ['lt'], why: '20 − 6 = 14, 10 + 5 = 15, а 14 < 15.' },
+      { parts: ['12 − 4 − 3  ○  12 − (4 + 3)'], ans: ['eq'], why: '12 − 4 − 3 = 5 и 12 − (4 + 3) = 12 − 7 = 5. Вычесть по очереди 4 и 3 — то же, что вычесть сразу 7.' },
+      { parts: ['50 − 10  ○  30 + 5'], ans: ['gt'], why: '50 − 10 = 40, 30 + 5 = 35, а 40 > 35.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-words', prompt: ['Запиши выражение по словам и найди его значение. Впиши значение.'],
+    build: blanks([
+      { parts: ['Из числа 38 вычесть разность чисел 17 и 9:  ', { box: '30' }], why: '38 − (17 − 9) = 38 − 8 = 30.', hint: 'Выражение: 38 − (17 − 9). Сначала найди разность в скобках.' },
+      { parts: ['Сумму чисел 7 и 6 уменьшить на 10:  ', { box: '3' }], why: '(7 + 6) − 10 = 13 − 10 = 3.', hint: 'Сначала найди сумму 7 + 6, потом вычти 10.' },
+      { parts: ['К числу 8 прибавить разность чисел 75 и 70:  ', { box: '13' }], why: '8 + (75 − 70) = 8 + 5 = 13.', hint: 'Выражение: 8 + (75 − 70). Сначала разность в скобках.' },
+      { parts: ['Разность чисел 13 и 4 увеличить на 20:  ', { box: '29' }], why: '(13 − 4) + 20 = 9 + 20 = 29.', hint: 'Сначала найди разность 13 − 4, потом прибавь 20.' },
+      { parts: ['Число 25 уменьшить на разность чисел 13 и 9:  ', { box: '21' }], why: '25 − (13 − 9) = 25 − 4 = 21.', hint: 'Выражение: 25 − (13 − 9). Сначала разность в скобках.' },
+    ]),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

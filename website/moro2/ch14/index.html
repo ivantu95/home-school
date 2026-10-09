@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Длина ломаной</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 14, title: 'Длина ломаной', minutes: 9, language: 'ru', next: '../ch15/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+const c14_cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+// Colours of this chapter: the links of a polyline — orange, pink, violet (in turn); the whole length (sum) — blue COL.whole;
+// vertices — yellow COL.int; a plain segment — chalk; "longer by" — green COL.good; a mistake — red COL.bad.
+const C14_LC = [COL.task, COL.rat, COL.real];
+const C14_U = 120;                                   // px per centimetre, the same as on the ruler
+// A polyline that can bend and straighten without changing its link lengths.
+// lens: link lengths in cm, u: px per cm. Each link is a group drawn from (0, 0) along +x, so a pose only sets x, y, r.
+// labs: label strings (default "N см"); side: +1/−1 per link to move a label to the other side. Everything starts hidden.
+function c14_chain(p, lens, u, { labs, side = [], size = 30, w = 8 } = {}) {
+  const links = lens.map((L, i) => {
+    const g = G(p, { o: 0 });
+    g._line = path(g, `M0 0H${L * u}`, { stroke: C14_LC[i % 3], 'stroke-width': w }, { d: 0 });
+    return g;
+  });
+  const dots = lens.concat(0).map(() => { const d = mk('circle', { cx: 0, cy: 0, r: 8, fill: COL.chalk }, p); put(d, { o: 0, s: .4 }); return d; });
+  const tl = (labs || lens.map(L => `${L} см`)).map((s, i) => T(p, s, { size, fill: C14_LC[i % 3], weight: 700, anchor: 'middle', o: 0 }));
+  return { lens, u, links, dots, labs: tl, side, size, pts: [] };
+}
+// Put a chain at (x, y) with link directions angs (degrees, + is clockwise). Labels stay upright, beside their link.
+function c14_pose(ch, x, y, angs) {
+  let cx = x, cy = y;
+  ch.pts = [[cx, cy]];
+  put(ch.dots[0], { x: cx, y: cy });
+  ch.lens.forEach((L, i) => {
+    const a = angs[i] * Math.PI / 180, len = L * ch.u;
+    put(ch.links[i], { x: cx, y: cy, r: angs[i] });
+    const nx = cx + len * Math.cos(a), ny = cy + len * Math.sin(a);
+    let ox = Math.sin(a), oy = -Math.cos(a);
+    if (oy > 0) { ox = -ox; oy = -oy; }
+    const k = (ch.side[i] ?? 1) * ch.size;
+    put(ch.labs[i], { x: (cx + nx) / 2 + ox * k * 1.8, y: (cy + ny) / 2 + oy * k + ch.size / 3 });
+    cx = nx; cy = ny;
+    ch.pts.push([cx, cy]);
+    put(ch.dots[i + 1], { x: cx, y: cy });
+  });
+  return ch.pts;
+}
+// Move a chain from pose a to pose b ({x, y, angs}) — every joint turns smoothly; the lengths never change.
+function c14_move(ch, a, b, t0, dur) {
+  c14_pose(ch, a.x, a.y, a.angs);
+  const l = (u, v, q) => u + (v - u) * q;
+  prog(q => c14_pose(ch, l(a.x, b.x, q), l(a.y, b.y, q), a.angs.map((v, i) => l(v, b.angs[i], q))), t0, dur, io);
+}
+// Draw a chain link by link from t0 (step seconds per link), with its vertices.
+function c14_drawIn(ch, t0, step = .35) {
+  pop(ch.dots[0], t0);
+  ch.links.forEach((g, i) => { show(g, t0 + i * step, .01); draw(g._line, t0 + i * step, step); pop(ch.dots[i + 1], t0 + (i + 1) * step); });
+}
+// Show the whole chain at once (no drawing).
+function c14_showAll(ch, t0, labels = true) {
+  ch.links.forEach(g => { put(g._line, { d: 1 }); show(g, t0); });
+  ch.dots.forEach(d => { put(d, { s: 1 }); show(d, t0); });
+  if (labels) ch.labs.forEach(e => show(e, t0));
+}
+// Small pictures for the "which path is longer" check.
+function c14_house(p, x, y) {
+  const g = G(p, { x, y, o: 0 });
+  mk('rect', { x: -70, y: -70, width: 140, height: 110, rx: 4, fill: COL.task, 'fill-opacity': .18, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  path(g, 'M-88 -70L0 -140L88 -70Z', { fill: COL.bad, 'fill-opacity': .35, stroke: COL.chalk, 'stroke-width': 3 });
+  mk('rect', { x: -18, y: -20, width: 36, height: 60, rx: 3, fill: COL.board, stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+  return g;
+}
+function c14_well(p, x, y) {
+  const g = G(p, { x, y, o: 0 });
+  mk('rect', { x: -50, y: -40, width: 100, height: 60, rx: 6, fill: COL.whole, 'fill-opacity': .25, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  path(g, 'M-40 -40V-100M40 -40V-100M-60 -100L0 -135L60 -100Z', { stroke: COL.chalk, 'stroke-width': 3 });
+  path(g, 'M-50 -20H50M-50 0H50', { stroke: COL.chalk, 'stroke-width': 1.5, 'stroke-opacity': .5 });
+  return g;
+}
+function c14_gazebo(p, x, y) {
+  const g = G(p, { x, y, o: 0 });
+  path(g, 'M-75 -60L0 -120L75 -60Z', { fill: COL.int, 'fill-opacity': .35, stroke: COL.chalk, 'stroke-width': 3 });
+  path(g, 'M-60 -60V20M60 -60V20M0 -60V20M-70 20H70', { stroke: COL.chalk, 'stroke-width': 3 });
+  return g;
+}
+
+// Data of the drawings (lengths in cm, directions in degrees).
+const C14_A = { lens: [5, 3, 3], pose: { x: 215, y: 220, angs: [20, -35, 30] } };   // textbook p. 32 № 1: 5 + 3 + 3 = 11
+const C14_ATN = Math.atan2(3, 4) * 180 / Math.PI;                                   // a 3-4-5 triangle: two 5 cm links over an 8 cm segment
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Длина ломаной', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 14', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Длина ломаной', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'из чего состоит ломаная и как найти её длину', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['parts', 'Звенья и вершины', (m) => {
+    const p = panel(0);
+    const ch = c14_chain(p, C14_A.lens, C14_U, { labs: ['1', '2', '3'], size: 40 });
+    const P = c14_pose(ch, C14_A.pose.x, C14_A.pose.y, C14_A.pose.angs);
+    c14_drawIn(ch, .2, .4);
+    ['l1', 'l2', 'l3'].forEach((k, i) => {
+      put(ch.labs[i], { s: .4 }); pop(ch.labs[i], m(k));
+      tw(ch.links[i]._line, { 'a_stroke-width': 16 }, m(k), .25, out); tw(ch.links[i]._line, { 'a_stroke-width': 8 }, m(k, .3), .5);
+    });
+    text(p, 'звено', (P[0][0] + P[1][0]) / 2 - 40, (P[0][1] + P[1][1]) / 2 + 70, m('l1', .4), { size: 30, fill: C14_LC[0], anchor: 'middle', weight: 600 });
+    // vertices: the joints first, then the two ends
+    const rings = P.map(([x, y]) => { const r = mk('circle', { cx: 0, cy: 0, r: 22, fill: 'none', stroke: COL.int, 'stroke-width': 4 }, p); put(r, { x, y, o: 0, s: .4 }); return r; });
+    pop(rings[1], m('v')); pop(rings[2], m('v', .3));
+    text(p, 'вершина', P[1][0], P[1][1] + 70, m('v', .3), { size: 30, fill: COL.int, anchor: 'middle', weight: 600 });
+    pop(rings[0], m('ends')); pop(rings[3], m('ends', .3));
+    ['c1', 'c2', 'c3', 'c4'].forEach((k, i) => {
+      const [x, y] = P[i], [dx, dy] = [[-46, 12], [46, 12], [0, -40], [46, 12]][i];
+      const n = T(p, String(i + 1), { x: x + dx, y: y + dy, size: 34, fill: COL.int, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, m(k)); pulse(rings[i], m(k), 1.3);
+    });
+    const g1 = text(p, '3 звена', 560, 660, m('sum'), { size: 52, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    const g2 = text(p, '4 вершины', 1040, 660, m('sum', .6), { size: 52, fill: COL.int, anchor: 'middle', weight: 700 });
+    void g1; void g2;
+  }],
+
+  ['measure', 'Способ 1: измерить звенья', (m) => {
+    const p = panel(0);
+    const ch = c14_chain(p, C14_A.lens, C14_U);
+    const P = c14_pose(ch, C14_A.pose.x, C14_A.pose.y, C14_A.pose.angs);
+    c14_showAll(ch, .2, false);
+    // a ruler is laid along each link (a short one for the 3 cm links, so it doesn't cover the next link)
+    const ruler = (i, n) => {
+      const hold = G(p, { x: P[i][0], y: P[i][1], r: C14_A.pose.angs[i], o: 0 });
+      put(uRuler(hold, 0, 6, C14_U, n).g, { o: 1 });
+      return hold;
+    };
+    const r5 = ruler(0, 5), r3 = ruler(1, 3);
+    show(r5, m('r1'), .4);
+    show(ch.labs[0], m('r1', 1.4));
+    hide(r5, m('r2'), .3); show(r3, m('r2', .2), .4);
+    show(ch.labs[1], m('r2', 1));
+    tw(r3, { x: P[2][0], y: P[2][1], r: C14_A.pose.angs[2] }, m('r3'), .8);
+    show(ch.labs[2], m('r3', 1));
+    hide(r3, m('sum'), .4);
+    mline(p, '5 + 3 + 3 = 11 (см)', 800, 640, m('sum', .2), COL.chalk, 64);
+    text(p, 'Длина ломаной — 11 см', 800, 750, m('ans'), { size: 42, fill: COL.whole, anchor: 'middle', weight: 700 });
+  }],
+
+  ['straight', 'Способ 2: выпрямить ломаную', (m) => {
+    const p = panel(0);
+    const { x, y, angs } = C14_A.pose;
+    // the polyline stays as a faint trace in its place
+    const ghost = c14_chain(p, C14_A.lens, C14_U, { labs: ['', '', ''] });
+    c14_pose(ghost, x, y, angs);
+    ghost.links.forEach(g => { put(g._line, { d: 1 }); g._line.setAttribute('stroke', COL.faint); g._line.setAttribute('stroke-dasharray', '10 10'); g._line.removeAttribute('pathLength'); put(g, { o: 1 }); });
+    const ch = c14_chain(p, C14_A.lens, C14_U);
+    c14_pose(ch, x, y, angs);
+    c14_showAll(ch, .2);
+    const R = uRuler(p, 80, 650, C14_U, 12);
+    show(R.g, m('ruler'), .6);
+    c14_move(ch, { x, y, angs }, { x: R.X(0), y: 642, angs: [0, 0, 0] }, m('go'), 3.2);
+    [5, 8].forEach((v, i) => { const d = path(p, `M${R.X(v)} 600V650`, { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '5 6' }); put(d, { o: 0 }); show(d, m('read', -.4 + i * .1)); });
+    uBracket(p, R.X(0), R.X(11), 570, '11 см', COL.whole, m('read'), { up: true, size: 40 });
+    const mark = mk('circle', { cx: R.X(11), cy: 690, r: 26, fill: 'none', stroke: COL.whole, 'stroke-width': 4 }, p);
+    put(mark, { o: 0 }); show(mark, m('read', .2)); pulse(mark, m('read', .6), 1.3);
+    text(p, 'одно измерение вместо трёх', 800, 790, m('one'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    text(p, 'Длина ломаной = сумма длин звеньев', 800, 860, m('rule'), { size: 38, fill: COL.whole, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const ch = c14_chain(p, [2, 3, 4, 2], C14_U, { side: [1, 1, 1, -1] });
+    c14_pose(ch, 270, 300, [-40, 35, -30, 45]);
+    c14_showAll(ch, .2);
+  }, { ask: done => quiz({ x: 200, y: 440, w: 1200, cls: 'side' }, [{
+    id: 'c-links', prompt: ['Посчитай звенья и вершины этой ломаной и найди её длину.'],
+    build: blanks([
+      { parts: ['Звеньев: ', { box: '4' }], why: 'Ломаная состоит из 4 отрезков — это 4 звена.', hint: 'Звено — это один отрезок ломаной. Посчитай отрезки разного цвета.' },
+      { parts: ['Вершин: ', { box: '5' }], why: '3 вершины, где звенья соединяются, и ещё 2 конца: 5 вершин. Вершин на одну больше, чем звеньев.', hint: 'Посчитай все точки, вместе с началом и концом ломаной.' },
+      { parts: ['Длина: 2 + 3 + 4 + 2 = ', { box: '11' }, ' см'], why: '2 + 3 = 5, 5 + 4 = 9, 9 + 2 = 11 (см).', hint: 'Складывай по порядку: 2 + 3, потом прибавь 4, потом 2.' },
+    ]),
+  }], done) }],
+
+  ['compare', 'Ломаная и отрезок', (m) => {
+    const p = panel(0);
+    const ch = c14_chain(p, [5, 5], C14_U);
+    const P = c14_pose(ch, 320, 450, [-C14_ATN, C14_ATN]);
+    c14_drawIn(ch, .2, .4);
+    ch.labs.forEach(e => show(e, .8));
+    const seg = G(p, { x: P[0][0], y: P[0][1], o: 0 });
+    const sl = path(seg, `M0 0H${8 * C14_U}`, { stroke: COL.chalk, 'stroke-width': 6 }, { d: 0 });
+    show(seg, m('seg'), .01); draw(sl, m('seg'), .8);
+    const s8 = text(p, '8 см', 800, 500, m('seg', 1), { size: 30, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    text(p, 'ломаная — 8 см?', 1420, 190, m('wrong'), { size: 34, fill: COL.bad, anchor: 'middle', weight: 600 });
+    c14_cross(p, 1290, 200, 1550, 165, m('wrong', 1.3));
+    const R = uRuler(p, 200, 650, C14_U, 10);
+    show(R.g, m('go', -.3), .5);
+    hide(s8, m('go'), .3);
+    c14_move(ch, { x: P[0][0], y: P[0][1], angs: [-C14_ATN, C14_ATN] }, { x: R.X(0), y: 596, angs: [0, 0] }, m('go', .2), 2.4);
+    tw(seg, { x: R.X(0), y: 628 }, m('move'), 1);
+    text(p, '10 см', 165, 606, m('ans'), { size: 32, fill: COL.whole, anchor: 'end', weight: 700 });
+    text(p, '8 см', 165, 640, m('move', 1), { size: 32, fill: COL.chalk, anchor: 'end', weight: 700 });
+    const box = mk('rect', { x: R.X(8), y: 578, width: 2 * C14_U, height: 36, rx: 6, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(box, { o: 0 }); show(box, m('ans', .8));
+    text(p, 'на 2 см длиннее', R.X(9), 548, m('ans', 1), { size: 30, fill: COL.good, anchor: 'middle', weight: 700 });
+    mline(p, '10 см > 8 см', 800, 790, m('ans', .5), COL.chalk, 56);
+    text(p, 'прямой путь — самый короткий', 800, 860, m('rule'), { size: 34, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const u = 80;
+    const L = G(p, { o: 0 }), Rg = G(p, { o: 0 });
+    const a = c14_chain(L, [4, 5], u);
+    c14_pose(a, 700, 650, [180, -120]); c14_showAll(a, 0);
+    const b = c14_chain(Rg, [2, 6], u, { side: [-1, 1] });
+    c14_pose(b, 900, 650, [-90, -15]); c14_showAll(b, 0);
+    const h = c14_house(p, 800, 650), w = c14_well(p, 180, 300), gz = c14_gazebo(p, 1395, 380);
+    [h, w, gz].forEach(e => show(e, .2));
+    text(p, 'колодец', 180, 135, .3, { size: 28, fill: COL.dim, anchor: 'middle' });
+    text(p, 'беседка', 1395, 230, .3, { size: 28, fill: COL.dim, anchor: 'middle' });
+    text(p, 'нарисовано мельче', 1540, 860, .3, { size: 22, fill: COL.faint, anchor: 'end' });
+    show(L, .3); show(Rg, .5);
+    S.c14q2 = [L, Rg];
+  }, { ask: done => quiz({ x: 430, y: 40, w: 740, cls: 'side' }, [{
+    id: 'c-paths', prompt: ['От дома идут две дорожки: к колодцу и к беседке. Какая дорожка длиннее? Щёлкни по ней.'],
+    build: pickEls([
+      { box: [860, 330, 570, 380], el: S.c14q2[1], label: 'Дорожка к беседке' },
+      { box: [130, 280, 600, 430], el: S.c14q2[0], label: 'Дорожка к колодцу' },
+    ], 1,
+      'Дорожка к колодцу: 4 + 5 = 9 (см). К беседке: 2 + 6 = 8 (см). 9 см больше 8 см.',
+      () => 'У дорожки к беседке самое длинное звено — 6 см, но надо сложить все звенья: 2 + 6 = 8 (см), а 4 + 5 = 9 (см).'),
+  }], done) }],
+
+  ['same', 'Разные ломаные одной длины', (m) => {
+    const p = panel(0);
+    const u = 100, base = 680;
+    const R = uRuler(p, 300, 700, u, 10);
+    show(R.g, .2, .5);
+    const seg = path(p, `M${R.X(0)} ${base}H${R.X(9)}`, { stroke: COL.chalk, 'stroke-width': 8 }, { d: 0 });
+    draw(seg, .4, .8);
+    text(p, '9 см', R.X(9) + 30, base + 10, m('seg', .3), { size: 32, fill: COL.chalk, weight: 700 });
+    // three links: 4 + 2 + 3
+    const a = c14_chain(p, [4, 2, 3], u);
+    c14_pose(a, R.X(0), base, [0, 0, 0]);
+    c14_showAll(a, m('cut'), false);
+    a.labs.forEach((e, i) => show(e, m('cut', .4 + i * .4)));
+    tw(seg, { o: .3 }, m('fold'), .4);
+    c14_move(a, { x: R.X(0), y: base, angs: [0, 0, 0] }, { x: 120, y: 590, angs: [-40, 40, -45] }, m('fold', .2), 2.4);
+    mline(p, '4 + 2 + 3 = 9 (см)', 455, 140, m('len'), COL.whole, 48);
+    // two links: 5 + 4
+    const b = c14_chain(p, [5, 4], u);
+    c14_pose(b, R.X(0), base, [0, 0]);
+    c14_showAll(b, m('two'));
+    c14_move(b, { x: R.X(0), y: base, angs: [0, 0] }, { x: 900, y: 600, angs: [-55, 50] }, m('two', 1.2), 2.4);
+    mline(p, '5 + 4 = 9 (см)', 1220, 140, m('same'), COL.whole, 48);
+    a.links.forEach(g => pulse(g._line, m('same', .6), 1));
+    [a, b].forEach(c => c.dots.forEach(d => pulse(d, m('same', .6), 1.4)));
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const ch = c14_chain(p, [5, 6], 60, { labs: ['? см', '? см'] });
+    c14_pose(ch, 120, 430, [-35, 30]);
+    c14_showAll(ch, .2);
+    text(p, 'Длина ломаной — 11 см', 400, 560, .4, { size: 36, fill: COL.whole, anchor: 'middle', weight: 700 });
+    text(p, 'нарисовано мельче', 680, 620, .4, { size: 22, fill: COL.faint, anchor: 'end' });
+  }, { ask: done => quiz({ x: 760, y: 110, w: 780, cls: 'side' }, [{
+    id: 'c-two', prompt: ['Ломаная из двух звеньев длиной 11 см. Какой длины может быть второе звено? Заполни окошки.'],
+    build: blanks([
+      { parts: ['4 см и ', { box: '7' }, ' см'], why: '4 + 7 = 11, значит, второе звено 7 см.', hint: 'Сколько надо прибавить к 4, чтобы получилось 11?' },
+      { parts: ['9 см и ', { box: '2' }, ' см'], why: '11 − 9 = 2: второе звено 2 см.', hint: 'Вся длина — 11 см. Вычти первое звено: 11 − 9.' },
+      { parts: ['5 см и ', { box: '6' }, ' см'], why: '11 − 5 = 6: второе звено 6 см.', hint: 'Вычти из длины ломаной длину первого звена: 11 − 5.' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 160, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Ломаная состоит из звеньев. Звенья соединяются в вершинах.', 'w1'],
+     ['Длина ломаной — это сумма длин её звеньев.', 'w2'],
+     ['Ломаная длиннее отрезка, который соединяет её концы.', 'w3'],
+     ['У разных ломаных может быть одинаковая длина.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 280 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 34, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-length', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Звенья ломаной — 3 см, 4 см и 2 см. Её длина — ', { box: '9' }, ' см'], why: '3 + 4 + 2 = 9 (см).', hint: 'Длина ломаной — это сумма длин звеньев.' },
+      { parts: ['У ломаной 4 звена, каждое по 2 см. Её длина — ', { box: '8' }, ' см'], why: '2 + 2 + 2 + 2 = 8 (см).', hint: 'Сложи длины всех четырёх звеньев: 2 + 2 + 2 + 2.' },
+      { parts: ['Длина ломаной 12 см. Два звена — 5 см и 4 см, третье — ', { box: '3' }, ' см'], why: '5 + 4 = 9, 12 − 9 = 3 (см).', hint: 'Сначала сложи известные звенья, потом вычти из 12.' },
+      { parts: ['У ломаной 5 звеньев. Вершин у неё — ', { box: '6' }], why: 'Вершин на одну больше, чем звеньев: 6.', hint: 'Нарисуй ломаную из 5 звеньев и посчитай точки вместе с концами.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-bug', prompt: ['Жук прополз от камня до цветка прямо — 7 дм. Муравей прополз от того же камня до того же цветка по ломаной из трёх звеньев: 2 дм, 3 дм и 4 дм. Кто прополз больше и на сколько?'],
+    build: choice([['Муравей, на 2 дм'], ['Жук, на 2 дм'], ['Муравей, на 9 дм']], 0,
+      'Путь муравья: 2 + 3 + 4 = 9 (дм). 9 − 7 = 2 (дм). Муравей прополз на 2 дм больше.',
+      [null, 'Прямой путь самый короткий: жук прополз меньше. Путь муравья 2 + 3 + 4 = 9 (дм), а 9 больше 7.',
+       '9 дм — это весь путь муравья. А спрашивают, на сколько больше: 9 − 7 = 2 (дм).']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

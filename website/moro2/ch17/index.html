@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Периметр многоугольника</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 17, title: 'Периметр многоугольника', minutes: 9, language: 'ru', next: '../ch18/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+const c17_cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+const c17_small = (p, t0 = .3) => text(p, 'нарисовано мельче', 1540, 860, t0, { size: 22, fill: COL.faint, anchor: 'end' });
+// Colours of this chapter: the sides of a polygon — orange, pink, violet (in turn, neighbours never share a colour);
+// the perimeter (sum of all sides) — blue COL.whole; vertices — yellow COL.int; "longer by" — green COL.good; a mistake — red COL.bad.
+const C17_LC = [COL.task, COL.rat, COL.real];
+const C17_U = 120;                                   // px per centimetre, the same as on the ruler
+// A chain of links that can bend and straighten without changing its link lengths (from ch14's c14_chain).
+// lens: link lengths in cm, u: px per cm. Each link is a group drawn from (0, 0) along +x, so a pose only sets x, y, r.
+// labs: label strings (default "N см"); side: +1/−1 per link. Labels sit on the left of the direction of travel
+// (the normal (sin a, −cos a)); for a polygon from c17_poly that is outside, and on a straight chain going right — above.
+function c17_chain(p, lens, u, { labs, side = [], size = 30, w = 8, closed = false } = {}) {
+  const n = lens.length;
+  const col = i => (closed && i === n - 1 && i % 3 === 0) ? COL.rat : C17_LC[i % 3];
+  const links = lens.map((L, i) => {
+    const g = G(p, { o: 0 });
+    g._line = path(g, `M0 0H${L * u}`, { stroke: col(i), 'stroke-width': w, 'stroke-linecap': 'round' }, { d: 0 });
+    return g;
+  });
+  const dots = lens.concat(0).map(() => { const d = mk('circle', { cx: 0, cy: 0, r: 8, fill: COL.int }, p); put(d, { o: 0, s: .4 }); return d; });
+  const tl = (labs || lens.map(L => `${L} см`)).map((s, i) => T(p, s, { size, fill: col(i), weight: 700, anchor: 'middle', o: 0 }));
+  return { lens, u, links, dots, labs: tl, side, size, pts: [], col };
+}
+// A closed polygon as a chain. pts: vertices in cm (y down). The order is turned so that the outside is on the left of
+// travel; vertex 0 stays first. Returns the chain with .angs (directions of the sides).
+function c17_poly(p, pts, u, opts = {}) {
+  let P = pts.slice();
+  const area = P.reduce((s, [x, y], i) => { const [x2, y2] = P[(i + 1) % P.length]; return s + x * y2 - x2 * y; }, 0);
+  if (area < 0) P = [P[0], ...P.slice(1).reverse()];
+  const lens = [], angs = [];
+  P.forEach(([x, y], i) => {
+    const [x2, y2] = P[(i + 1) % P.length];
+    lens.push(+Math.hypot(x2 - x, y2 - y).toFixed(6));
+    angs.push(Math.atan2(y2 - y, x2 - x) * 180 / Math.PI);
+  });
+  const ch = c17_chain(p, lens, u, { closed: true, ...opts });
+  ch.angs = angs;
+  return ch;
+}
+// Put a chain at (x, y) with link directions angs (degrees, + is clockwise). Labels stay upright, beside their link.
+function c17_pose(ch, x, y, angs) {
+  let cx = x, cy = y;
+  ch.pts = [[cx, cy]];
+  put(ch.dots[0], { x: cx, y: cy });
+  ch.lens.forEach((L, i) => {
+    const a = angs[i] * Math.PI / 180, len = L * ch.u;
+    put(ch.links[i], { x: cx, y: cy, r: angs[i] });
+    const nx = cx + len * Math.cos(a), ny = cy + len * Math.sin(a);
+    const k = (ch.side[i] ?? 1) * ch.size, ox = Math.sin(a), oy = -Math.cos(a);
+    put(ch.labs[i], { x: (cx + nx) / 2 + ox * k * 1.6, y: (cy + ny) / 2 + oy * k * 1.05 + ch.size / 3 });
+    cx = nx; cy = ny;
+    ch.pts.push([cx, cy]);
+    put(ch.dots[i + 1], { x: cx, y: cy });
+  });
+  return ch.pts;
+}
+// Move a chain from pose a to pose b ({x, y, angs}). The first direction and every turn at a joint change smoothly,
+// so a convex polygon opens like a hinge into a straight line (or folds back); the lengths never change.
+function c17_move(ch, a, b, t0, dur) {
+  c17_pose(ch, a.x, a.y, a.angs);
+  const wrap = v => { v = ((v + 180) % 360 + 360) % 360 - 180; return v === -180 ? 180 : v; };
+  const turns = A => A.map((v, i) => i ? wrap(v - A[i - 1]) : v);
+  const ta = turns(a.angs), tb = turns(b.angs);
+  tb[0] = ta[0] + wrap(tb[0] - ta[0]);
+  const l = (u, v, q) => u + (v - u) * q;
+  prog(q => {
+    let s = 0;
+    const angs = ta.map((v, i) => (s = i ? s + l(v, tb[i], q) : l(v, tb[0], q)));
+    c17_pose(ch, l(a.x, b.x, q), l(a.y, b.y, q), angs);
+  }, t0, dur, io);
+}
+// Draw a chain link by link from t0 (step seconds per link), with its vertices.
+function c17_drawIn(ch, t0, step = .35) {
+  pop(ch.dots[0], t0);
+  ch.links.forEach((g, i) => { show(g, t0 + i * step, .01); draw(g._line, t0 + i * step, step); pop(ch.dots[i + 1], t0 + (i + 1) * step); });
+}
+// Show the whole chain at once (no drawing).
+function c17_showAll(ch, t0, labels = true) {
+  ch.links.forEach(g => { put(g._line, { d: 1 }); show(g, t0); });
+  ch.dots.forEach(d => { put(d, { s: 1 }); show(d, t0); });
+  if (labels) ch.labs.forEach(e => show(e, t0));
+}
+// A thick flash of one side.
+const c17_flash = (ch, i, t0) => { tw(ch.links[i]._line, { 'a_stroke-width': 18 }, t0, .25, out); tw(ch.links[i]._line, { 'a_stroke-width': 8 }, t0 + .3, .5); };
+// A point at share q (0…1) of the way along a closed path of points.
+function c17_along(P, q) {
+  const segs = P.slice(0, -1).map((pt, i) => Math.hypot(P[i + 1][0] - pt[0], P[i + 1][1] - pt[1]));
+  let d = q * segs.reduce((s, v) => s + v, 0);
+  for (let i = 0; i < segs.length; i++) {
+    if (d <= segs[i] || i === segs.length - 1) {
+      const k = segs[i] ? Math.min(1, d / segs[i]) : 0, [x1, y1] = P[i], [x2, y2] = P[i + 1];
+      return [x1 + (x2 - x1) * k, y1 + (y2 - y1) * k, Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI];
+    }
+    d -= segs[i];
+  }
+}
+
+// Data of the drawings (cm, y down; vertex 0 first).
+const C17_TRI = [[0, 0], [4, 0], [0, -3]];                    // 3, 4, 5 cm (a right triangle, honest at 120 px = 1 cm): P = 12 cm
+const C17_TRAP = [[0, 0], [5, 0], [2, -4], [0, -4]];          // 5, 5, 2, 4 cm: P = 16 cm
+const C17_HOUSE = [[0, 0], [6, 0], [6, -2], [3, -6], [0, -2]]; // 6, 2, 5, 5, 2 cm: P = 20 cm
+const C17_WIRE = [[0, 0], [8, 0], [37 / 16, -Math.sqrt(9 - (37 / 16) ** 2)]];   // 8, 6, 3 cm (textbook № 2): P = 17 cm
+const C17_EQ = [[0, 0], [5, 0], [2.5, -2.5 * Math.sqrt(3)]];  // all sides 5 cm: P = 15 cm
+const C17_SQ = [[0, 0], [4, 0], [4, -4], [0, -4]];            // all sides 4 cm: P = 16 cm
+const C17_PAR = [[0, 0], [0, -2], [4, -5], [4, -3]];          // 2, 5, 2, 5 cm: P = 14 cm
+const C17_FLAT = n => Array(n).fill(0);
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Периметр многоугольника', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 17', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Периметр многоугольника', { x: 800, y: 440, size: 90, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'что такое периметр и как его найти', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['polys', 'Многоугольники', (m) => {
+    const p = panel(0);
+    const shapes = [
+      { pts: [[0, 0], [150, -260], [250, -40]], x: 170, y: 520, cx: 295, name: 'треугольник', cnt: '3 стороны · 3 вершины', mark: 'tri' },
+      { pts: [[0, 0], [260, -20], [290, -250], [40, -230]], x: 670, y: 520, cx: 815, name: 'четырёхугольник', cnt: '4 стороны · 4 вершины', mark: 'quad' },
+      { pts: [[0, -130], [130, -270], [270, -190], [240, 10], [60, 20]], x: 1170, y: 380, cx: 1305, name: 'пятиугольник', cnt: '5 сторон · 5 вершин', mark: 'pent' },
+    ];
+    shapes.forEach((s, j) => {
+      const ch = c17_poly(p, s.pts, 1, { labs: s.pts.map(() => '') });
+      c17_pose(ch, s.x, s.y, ch.angs);
+      c17_drawIn(ch, .2 + j * .5, .12);
+      const t = m(s.mark);
+      ch.links.forEach((g, i) => c17_flash(ch, i, t + .25 * i));
+      ch.dots.slice(0, -1).forEach((d, i) => pulse(d, t + 1.4 + .2 * i, 1.8));
+      text(p, s.cnt, s.cx, 640, t + .2, { size: 28, fill: COL.dim, anchor: 'middle' });
+      text(p, s.name, s.cx, 700, t + 2, { size: 38, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    });
+    text(p, 'стороны — отрезки', 800, 800, m('rule'), { size: 34, fill: COL.task, anchor: 'middle', weight: 600 });
+    text(p, 'вершины — точки, где стороны встречаются', 800, 856, m('rule', 1.3), { size: 34, fill: COL.int, anchor: 'middle', weight: 600 });
+  }],
+
+  ['measure', 'Измерим стороны', (m) => {
+    const p = panel(0);
+    const ch = c17_poly(p, C17_TRI, C17_U);
+    const P = c17_pose(ch, 560, 480, ch.angs);
+    c17_drawIn(ch, .2, .4);
+    // a ruler is laid outside along each side, its 0 at the end of the side
+    ['r1', 'r2', 'r3'].forEach((k, i) => {
+      const hold = G(p, { x: P[i + 1][0], y: P[i + 1][1], r: ch.angs[i] + 180, o: 0 });
+      put(uRuler(hold, 0, 6, C17_U, ch.lens[i]).g, { o: 1 });
+      show(hold, m(k), .4);
+      hide(hold, m(k, 1.6), .4);
+      show(ch.labs[i], m(k, 1.8));
+      c17_flash(ch, i, m(k, 1.8));
+    });
+    mline(p, '3 + 5 + 4 = 12 (см)', 800, 690, m('sum'), COL.chalk, 60);
+    text(p, 'Периметр треугольника — 12 см', 800, 775, m('ans'), { size: 40, fill: COL.whole, anchor: 'middle', weight: 700 });
+    text(p, 'Периметр = сумма длин всех сторон', 800, 850, m('rule'), { size: 38, fill: COL.whole, anchor: 'middle', weight: 700 });
+  }],
+
+  ['unfold', 'Периметр на линейке', (m) => {
+    const p = panel(0);
+    const x = 300, y = 500;
+    // the triangle stays as a faint trace in its place
+    const ghost = c17_poly(p, C17_TRI, C17_U, { labs: ['', '', ''] });
+    c17_pose(ghost, x, y, ghost.angs);
+    ghost.links.forEach(g => { put(g._line, { d: 1 }); g._line.setAttribute('stroke', COL.faint); g._line.setAttribute('stroke-dasharray', '10 10'); g._line.removeAttribute('pathLength'); put(g, { o: 1 }); });
+    const ch = c17_poly(p, C17_TRI, C17_U);
+    const P = c17_pose(ch, x, y, ch.angs);
+    c17_showAll(ch, .2);
+    // a ladybug walks once round the edge
+    const bug = uLadybug(p, x, y, 16);
+    pop(bug, m('walk', -.3));
+    prog(q => { const [bx, by, a] = c17_along(P, q); put(bug, { x: bx, y: by, r: a + 90 }); }, m('walk', .3), 4, lin);
+    hide(bug, m('go'), .4);
+    const R = uRuler(p, 80, 650, C17_U, 12);
+    const cut = mk('circle', { cx: x, cy: y, r: 24, fill: 'none', stroke: COL.bad, 'stroke-width': 4 }, p);
+    put(cut, { o: 0 }); show(cut, m('go'), .3); pulse(cut, m('go', .2), 1.4); hide(cut, m('go', 1.2), .3);
+    c17_move(ch, { x, y, angs: ch.angs }, { x: R.X(0), y: 642, angs: C17_FLAT(3) }, m('go', 1.2), 3.2);
+    // the ruler slides in under the straight line once it lies still
+    put(R.g, { y: 60 }); tw(R.g, { y: 0 }, m('ruler'), .8, out); show(R.g, m('ruler'), .5);
+    [3, 8].forEach((v, i) => { const d = path(p, `M${R.X(v)} 600V650`, { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '5 6' }); put(d, { o: 0 }); show(d, m('read', -.4 + i * .1)); });
+    uBracket(p, R.X(0), R.X(12), 572, '12 см', COL.whole, m('read'), { up: true, size: 40 });
+    const mark = mk('circle', { cx: R.X(12), cy: 690, r: 26, fill: 'none', stroke: COL.whole, 'stroke-width': 4 }, p);
+    put(mark, { o: 0 }); show(mark, m('read', .2)); pulse(mark, m('read', .6), 1.3);
+    text(p, 'периметр — 12 см', 800, 820, m('read', 1.4), { size: 40, fill: COL.whole, anchor: 'middle', weight: 700 });
+    // the same walk, now along the straight line
+    tw(bug, { x: R.X(0), y: 642, r: 90 }, m('same', -.1), .01);
+    show(bug, m('same'), .3);
+    tw(bug, { x: R.X(12) }, m('same', .2), 2.4, io);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const ch = c17_poly(p, C17_TRAP, 100);
+    c17_pose(ch, 200, 640, ch.angs);
+    c17_showAll(ch, .2);
+    c17_small(p);
+  }, { ask: done => quiz({ x: 820, y: 140, w: 720, cls: 'side' }, [{
+    id: 'c-trap', prompt: ['Посчитай стороны и вершины этого многоугольника и найди его периметр.'],
+    build: blanks([
+      { parts: ['Сторон: ', { box: '4' }], why: 'У фигуры 4 стороны — это четырёхугольник.', hint: 'Сторона — это один отрезок. Посчитай отрезки разного цвета.' },
+      { parts: ['Вершин: ', { box: '4' }], why: 'Жёлтых точек 4. У многоугольника вершин столько же, сколько сторон.', hint: 'Посчитай жёлтые точки, где встречаются стороны.' },
+      { parts: ['Периметр: 4 + 2 + 5 + 5 = ', { box: '16' }, ' см'], why: '4 + 2 = 6, 6 + 5 = 11, 11 + 5 = 16 (см).', hint: 'Складывай по порядку: 4 + 2, потом прибавь 5 и ещё 5.' },
+    ]),
+  }], done) }],
+
+  ['mistake', 'Не пропусти сторону', (m) => {
+    const p = panel(0);
+    const ch = c17_poly(p, C17_HOUSE, 80);
+    const P = c17_pose(ch, 200, 700, ch.angs);
+    c17_drawIn(ch, .2, .3);
+    ch.labs.forEach(e => show(e, 1.4));
+    c17_small(p, 1.4);
+    // Kolya forgets the left wall
+    text(p, 'Коля: 6 + 5 + 5 + 2 = 18 (см)', 1150, 300, m('wrong'), { size: 44, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    const miss = path(p, `M${P[0][0]} ${P[0][1]}L${P[1][0]} ${P[1][1]}`, { stroke: COL.bad, 'stroke-width': 18, 'stroke-opacity': .55, 'stroke-linecap': 'round' });
+    put(miss, { o: 0 }); show(miss, m('miss'), .3); pulse(ch.labs[0], m('miss', .3), 1.5);
+    text(p, 'пропущена сторона!', 1150, 360, m('miss', .4), { size: 32, fill: COL.bad, anchor: 'middle', weight: 600 });
+    c17_cross(p, 860, 310, 1440, 270, m('cross'));
+    hide(miss, m('how'), .4);
+    // the right way: start at one vertex and go round, numbering the sides
+    const ring = mk('circle', { cx: P[0][0], cy: P[0][1], r: 22, fill: 'none', stroke: COL.int, 'stroke-width': 4 }, p);
+    put(ring, { o: 0 }); show(ring, m('how', .3)); pulse(ring, m('how', .8), 1.5);
+    ['s1', 's2', 's3', 's4', 's5'].forEach((k, i) => {
+      c17_flash(ch, i, m(k));
+      const a = ch.angs[i] * Math.PI / 180, mx = (P[i][0] + P[i + 1][0]) / 2, my = (P[i][1] + P[i + 1][1]) / 2;
+      const n = T(p, String(i + 1), { x: mx - Math.sin(a) * 42, y: my + Math.cos(a) * 42 + 11, size: 32, fill: COL.int, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, m(k));
+    });
+    uCounter(p, 1150, 520, '2', m('s1'), [[m('s2'), '2 + 5'], [m('s3'), '2 + 5 + 5'], [m('s4'), '2 + 5 + 5 + 2'], [m('s5'), '2 + 5 + 5 + 2 + 6'], [m('ans'), '2 + 5 + 5 + 2 + 6 = 20 (см)']], { size: 50 });
+    text(p, 'Периметр — 20 см', 1150, 610, m('ans', .4), { size: 42, fill: COL.whole, anchor: 'middle', weight: 700 });
+    text(p, '5 сторон — 5 слагаемых', 1150, 690, m('tip'), { size: 34, fill: COL.dim, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const ch = c17_poly(p, C17_WIRE, 60);
+    c17_pose(ch, 160, 200, C17_FLAT(3));
+    c17_showAll(ch, .2);
+    const w = text(p, 'кусок проволоки', 1210, 210, .2, { size: 28, fill: COL.dim });
+    hide(w, 1.4, .3);
+    c17_move(ch, { x: 160, y: 200, angs: C17_FLAT(3) }, { x: 180, y: 620, angs: ch.angs }, 1.4, 2.4);
+    c17_small(p);
+  }, { ask: done => quiz({ x: 760, y: 330, w: 780, cls: 'side' }, [{
+    id: 'c-wire', prompt: ['Слава согнул кусок проволоки, и получился треугольник со сторонами 3 см, 6 см и 8 см. Заполни окошки.'],
+    build: blanks([
+      { parts: ['Длина проволоки: 3 + 6 + 8 = ', { box: '17' }, ' см'], why: '3 + 6 = 9, 9 + 8 = 17 (см). Вся проволока ушла на стороны треугольника.', hint: 'Проволока стала тремя сторонами. Сложи их длины.' },
+      { parts: ['Периметр треугольника: ', { box: '17' }, ' см'], why: 'Периметр — сумма длин сторон, то есть длина всей проволоки: 17 см.', hint: 'Периметр — это сумма длин всех сторон. Её ты уже нашла выше.' },
+    ]),
+  }], done) }],
+
+  ['compare', 'Треугольник и квадрат', (m) => {
+    const p = panel(0);
+    const u = 80;
+    const a = c17_poly(p, C17_EQ, u), b = c17_poly(p, C17_SQ, u);
+    c17_pose(a, 200, 470, a.angs); c17_pose(b, 900, 470, b.angs);
+    c17_drawIn(a, .2, .3); c17_drawIn(b, .8, .3);
+    c17_small(p, .4);
+    a.labs.forEach((e, i) => show(e, m('sides', .2 + i * .15)));
+    b.labs.forEach((e, i) => show(e, m('sides', 2.2 + i * .15)));
+    text(p, 'у треугольника периметр больше?', 800, 70, m('wrong'), { size: 34, fill: COL.bad, anchor: 'middle', weight: 600 });
+    c17_cross(p, 530, 78, 1070, 48, m('wrong', 1.8));
+    const R = uRuler(p, 160, 650, u, 16);
+    const tr = Math.max(m('ruler'), m('go2', 2.5));   // after the square lies still
+    put(R.g, { y: 60 }); tw(R.g, { y: 0 }, tr, .8, out); show(R.g, tr, .5);
+    c17_move(a, { x: 200, y: 470, angs: a.angs }, { x: R.X(0), y: 560, angs: C17_FLAT(3) }, m('go', .1), 2.4);
+    b.labs.forEach(e => hide(e, m('go2'), .3));
+    c17_move(b, { x: 900, y: 470, angs: b.angs }, { x: R.X(0), y: 620, angs: C17_FLAT(4) }, m('go2', .1), 2.4);
+    text(p, '15 см', 145, 570, m('ans'), { size: 32, fill: COL.whole, anchor: 'end', weight: 700 });
+    text(p, '16 см', 145, 630, m('ans', .9), { size: 32, fill: COL.whole, anchor: 'end', weight: 700 });
+    const box = mk('rect', { x: R.X(15), y: 600, width: u, height: 40, rx: 6, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(box, { o: 0 }); show(box, m('why'));
+    text(p, 'на 1 см', 1458, 631, m('why', .3), { size: 28, fill: COL.good, weight: 700 });
+    mline(p, '15 см < 16 см', 800, 800, m('ans', 1.6), COL.chalk, 56);
+    text(p, 'сравнивай периметры, а не одну сторону', 800, 865, m('rule'), { size: 34, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const u = 60;
+    const ch = c17_poly(p, C17_PAR, u);
+    c17_pose(ch, 200, 470, ch.angs);
+    c17_showAll(ch, .2);
+    const R = uRuler(p, 140, 710, u, 16);
+    show(R.g, .3);
+    S.c17q3 = [12, 16, 14].map((L, i) => {
+      const y = 570 + i * 55, g = G(p, { o: 0 });
+      path(g, `M${R.X(0)} ${y}H${R.X(L)}`, { stroke: COL.chalk, 'stroke-width': 7, 'stroke-linecap': 'round' });
+      for (const xx of [R.X(0), R.X(L)]) mk('circle', { cx: xx, cy: y, r: 7, fill: COL.chalk }, g);
+      T(g, String(i + 1), { x: R.X(0) - 50, y: y + 11, size: 32, fill: COL.chalk, weight: 700, anchor: 'middle' });
+      show(g, .4 + i * .2);
+      return g;
+    });
+    c17_small(p);
+  }, { ask: done => quiz({ x: 600, y: 40, w: 920, cls: 'side' }, [{
+    id: 'c-seg', prompt: ['Длина какого отрезка равна периметру этого четырёхугольника? Щёлкни по нему.'],
+    build: pickEls([12, 16, 14].map((L, i) => ({ box: [65, 545 + i * 55, L * 60 + 105, 50], el: S.c17q3[i], label: `Отрезок ${i + 1}` })), 2,
+      'Периметр: 2 + 5 + 2 + 5 = 14 (см). Отрезок 3 на линейке — ровно 14 см.',
+      i => i === 0 ? 'Отрезок 1 — 12 см. Так выходит, если пропустить сторону 2 см. Сложи все четыре стороны: 2 + 5 + 2 + 5.'
+        : 'Отрезок 2 — 16 см, это длиннее периметра. Сложи стороны: 2 + 5 + 2 + 5 — и найди такой отрезок на линейке.'),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 160, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Треугольник — 3 стороны, четырёхугольник — 4, пятиугольник — 5.', 'w1'],
+     ['Периметр многоугольника — это сумма длин всех его сторон.', 'w2'],
+     ['Выпрямим стороны в одну линию — её длина равна периметру.', 'w3'],
+     ['Обходи фигуру по кругу и не пропускай ни одной стороны.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 280 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 34, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-perim', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Стороны треугольника — 4 см, 5 см и 6 см. Его периметр — ', { box: '15' }, ' см'], why: '4 + 5 + 6 = 15 (см).', hint: 'Периметр — это сумма длин всех сторон.' },
+      { parts: ['Огород — четырёхугольник со сторонами 6 м, 4 м, 6 м и 4 м. Забора вокруг него — ', { box: '20' }, ' м'], why: 'Забор идёт вдоль всех сторон: 6 + 4 + 6 + 4 = 20 (м). Это периметр огорода.', hint: 'Сторон четыре — значит, и слагаемых четыре: 6 + 4 + 6 + 4.' },
+      { parts: ['У пятиугольника все стороны по 3 см. Его периметр — ', { box: '15' }, ' см'], why: '3 + 3 + 3 + 3 + 3 = 15 (см).', hint: 'У пятиугольника 5 сторон. Сложи 3 пять раз.' },
+      { parts: ['Периметр треугольника 12 см, две стороны — 3 см и 4 см. Третья сторона — ', { box: '5' }, ' см'], why: '3 + 4 = 7, 12 − 7 = 5 (см).', hint: 'Сначала сложи две известные стороны, потом вычти из 12.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-equal', prompt: ['У квадрата все стороны по 3 см, а у треугольника — по 4 см. У какой фигуры периметр больше?'],
+    build: choice([['У треугольника'], ['Периметры равны'], ['У квадрата']], 1,
+      'Квадрат: 3 + 3 + 3 + 3 = 12 (см). Треугольник: 4 + 4 + 4 = 12 (см). Периметры равны.',
+      ['Стороны треугольника длиннее, но их только три: 4 + 4 + 4 = 12 (см). У квадрата 3 + 3 + 3 + 3 = 12 (см) — столько же.', null,
+       'Сторон у квадрата больше, но они короче: 3 + 3 + 3 + 3 = 12 (см). У треугольника 4 + 4 + 4 = 12 (см) — столько же.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

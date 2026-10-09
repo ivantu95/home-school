@@ -13,7 +13,7 @@
 <script src="../lib/units.js"></script>
 <script>
 'use strict';
-const CHAPTER = { number: 12, title: 'Неизвестное уменьшаемое и вычитаемое', minutes: 10, language: 'ru' };
+const CHAPTER = { number: 12, title: 'Неизвестное уменьшаемое и вычитаемое', minutes: 10, language: 'ru', next: '../ch13/' };
 
 /* ---------- chapter drawing helpers ---------- */
 const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };

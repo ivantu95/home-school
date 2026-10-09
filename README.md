@@ -1,6 +1,6 @@
 # Домашняя школа — материалы для 2 класса
 
-## Анимированная книга «Мерим и считаем» (Papermorph)
+## Анимированная книга «Математика, 2 класс» (Papermorph)
 
 Открыть локально (из этой папки):
 
@@ -10,7 +10,9 @@ python -m http.server 8765 -d website
 
 затем в браузере: http://localhost:8765/moro2/ — лучше в **Microsoft Edge**: там русский нейронный голос читает урок, пока нет MP3.
 
-Главы: 1. Миллиметр · 2. Метр.
+Готово 19 глав: раздел 1 «Нумерация» (гл. 1–9) и раздел 2 «Сложение и вычитание» (гл. 10–19). Карта всего курса (59 глав) — `curriculum/moro2/chapters.md`.
+
+Сайт: https://ivantu95.github.io/home-school/
 
 ### Настоящая озвучка (один раз, нужен интернет)
 
@@ -18,8 +20,7 @@ python -m http.server 8765 -d website
 
 ```
 $env:PYTHONUTF8=1
-uv run --with edge-tts .claude/skills/papermorph/scripts/tts.py lessons/moro2/ch01/narration.ru.json website/moro2/ch01/audio/ru
-uv run --with edge-tts .claude/skills/papermorph/scripts/tts.py lessons/moro2/ch02/narration.ru.json website/moro2/ch02/audio/ru
+1..19 | % { $n = '{0:D2}' -f $_; uv run --with edge-tts .claude/skills/papermorph/scripts/tts.py lessons/moro2/ch$n/narration.ru.json website/moro2/ch$n/audio/ru }
 ```
 
 Скрипт положит MP3 и заменит `timings.js` точными таймингами; страницы уроков менять не нужно.

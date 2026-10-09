@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приёмы 36 + 2 и 36 + 20</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 20, title: 'Приёмы 36 + 2 и 36 + 20', minutes: 8, language: 'ru' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Tens are blue, ones orange (BOOK.md).
+const TEN = COL.whole, ONE = COL.task, CH = COL.chalk;
+// A coloured line of math: items = [[str, colour], ...], placed around x (anchor 'middle' or 'start').
+// Shown at t0; returns the group with _xs (centre of each item), _w (width) and _x0 (left edge).
+function c20_row(p, items, x, y, t0, size = 64, anchor = 'middle') {
+  const g = G(p, { o: 0 });
+  const ws = items.map(([s]) => mathW([s], size)), w = ws.reduce((a, b) => a + b, 0);
+  let cx = anchor === 'middle' ? x - w / 2 : x;
+  g._xs = items.map(([s, fill], i) => { M(g, [s], { x: cx, y, size, fill, anchor: 'start' }); cx += ws[i]; return cx - ws[i] / 2; });
+  g._w = w; g._x0 = cx - w;
+  show(g, t0);
+  return g;
+}
+// Digits of a two-digit number coloured by place: 36 → 3 blue, 6 orange.
+const c20_n = n => [[String(Math.floor(n / 10)), TEN], [String(n % 10), ONE]];
+// A red line through a wrong row (row centred on x, baseline y).
+function c20_strike(p, row, x, y, t0) {
+  draw(path(p, `M${x - row._w / 2 - 12} ${y + 6}L${x + row._w / 2 + 12} ${y - 40}`, { stroke: COL.bad, 'stroke-width': 6 }, { d: 0 }), t0, .4);
+}
+// A green tick with its left end at (x, y).
+function c20_tick(p, x, y, t0) {
+  draw(path(p, `M${x} ${y}l20 22l40 -50`, { stroke: COL.good, 'stroke-width': 7 }, { d: 0 }), t0, .4);
+}
+// The place-value table: tens column on the left, ones column on the right; two rows (what we had, what we add).
+const C20_Y1 = 205, C20_Y2 = 395, C20_H = 140;
+const C20_TX = [160, 260, 360, 460, 560];        // bundle centres in the tens column
+const c20_sx = i => 665 + i * 40;                 // stick centres in the ones column
+function c20_table(p, t0) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x: 100, y: 110, width: 900, height: 480, rx: 14, fill: COL.chalk, 'fill-opacity': .04, stroke: COL.dim, 'stroke-width': 2.5 }, g);
+  path(g, 'M100 180H1000M620 110V590', { stroke: COL.dim, 'stroke-width': 2.5 });
+  path(g, 'M100 370H1000', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '8 8' });
+  T(g, 'Десятки', { x: 360, y: 158, size: 34, fill: TEN, weight: 600, anchor: 'middle' });
+  T(g, 'Единицы', { x: 810, y: 158, size: 34, fill: ONE, weight: 600, anchor: 'middle' });
+  show(g, t0, .5);
+  return g;
+}
+// 36 in the table: three bundles and six sticks in the top row. Returns { B, S }.
+function c20_36(p, t0) {
+  const B = [0, 1, 2].map(i => { const b = uBundle(p, C20_TX[i], C20_Y1, TEN, C20_H); show(b, t0 + i * .15, .4); return b; });
+  const S = [0, 1, 2, 3, 4, 5].map(i => { const s = uStick(p, c20_sx(i), C20_Y1, ONE, C20_H); show(s, t0 + .6 + i * .1, .4); return s; });
+  return { B, S };
+}
+// "36 + k = ?" on the right with the tree 36 → 30 and 6. Returns the end x of the row (where the answer goes).
+function c20_question(p, k, kc, t0, tSplit) {
+  const q = c20_row(p, [...c20_n(36), [' + ', CH], [String(k), kc], [' = ', CH]], 1100, 230, t0, 64, 'start');
+  const cx = (q._xs[0] + q._xs[1]) / 2;
+  draw(path(p, `M${cx - 6} 250L${cx - 48} 292M${cx + 6} 250L${cx + 48} 292`, { stroke: COL.dim, 'stroke-width': 3 }, { d: 0 }), tSplit, .4);
+  mline(p, '30', cx - 58, 345, tSplit + .3, TEN, 50);
+  mline(p, '6', cx + 58, 345, tSplit + .6, ONE, 50);
+  return q._x0 + q._w;
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Приёмы 36 + 2 и 36 + 20', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 3 · Глава 20', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Приёмы 36 + 2 и 36 + 20', { x: 800, y: 440, size: 92, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'единицы — к единицам, десятки — к десяткам', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['ones', 'Прибавляем единицы: 36 + 2', (m) => {
+    const p = panel(0);
+    const qx = c20_question(p, 2, ONE, .3, m('split'));
+    const ask = mline(p, '?', qx + 6, 230, .3, CH, 64, 'start');
+    c20_table(p, m('table'));
+    const { B, S } = c20_36(p, m('n36'));
+    B.forEach(b => pulse(b, m('split', .3), 1.06));
+    S.forEach(s => pulse(s, m('split', .6), 1.08));
+    // two loose sticks come into the bottom row, then join the ones
+    const add = [0, 1].map(i => {
+      const s = uStick(p, c20_sx(i), C20_Y2 + 40, ONE, C20_H);
+      tw(s, { o: 1, y: C20_Y2 }, m('add', i * .2), .5, out);
+      tw(s, { x: c20_sx(6 + i), y: C20_Y1 }, m('join', i * .15), .8, io);
+      return s;
+    });
+    [...S, ...add].forEach(s => pulse(s, m('join', 1.1), 1.08));
+    uBracket(p, c20_sx(0) - 20, c20_sx(7) + 20, 362, '8 ед.', ONE, m('join', 1.2), { size: 30 });
+    c20_row(p, [['6', ONE], [' + ', CH], ['2', ONE], [' = ', CH], ['8', ONE]], 1100, 460, m('join', 1), 56, 'start');
+    B.forEach(b => pulse(b, m('tens'), 1.06));
+    uBracket(p, 113, 407, 362, '3 дес.', TEN, m('tens', .2), { size: 30 });
+    c20_row(p, [['30', TEN], [' + ', CH], ['8', ONE], [' = ', CH], ...c20_n(38)], 1100, 555, m('tens', .6), 56, 'start');
+    hide(ask, m('tens', 1.6), .2);
+    pulse(c20_row(p, c20_n(38), qx + 6, 230, m('tens', 1.7), 64, 'start'), m('tens', 1.8), 1.15);
+    c20_row(p, [...c20_n(36), [' + ', CH], ['2', ONE], [' = ', CH], ['30', TEN], [' + (', CH], ['6', ONE], [' + ', CH], ['2', ONE], [') = ', CH], ...c20_n(38)], 800, 720, m('eq'), 68);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    c20_row(p, [...c20_n(36), [' + ', CH], ['2', ONE], [' = ', CH], ...c20_n(38)], 120, 300, .3, 50, 'start');
+    c20_row(p, [['6', ONE], [' + ', CH], ['2', ONE], [' = ', CH], ['8', ONE]], 120, 380, .4, 40, 'start');
+    text(p, 'единицы — с единицами', 120, 440, .5, { size: 28, fill: ONE, weight: 600 });
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-ones', prompt: ['Вычисли.'],
+    build: blanks([
+      { parts: ['27 + 2 = ', { box: '29' }], why: '27 = 20 + 7; 7 + 2 = 9; 20 + 9 = 29.', hint: 'Разложи 27 на 20 и 7. Прибавь 2 к единицам.' },
+      { parts: ['42 + 6 = ', { box: '48' }], why: '2 + 6 = 8, десятки те же: 48.', hint: 'Сколько единиц в числе 42? Прибавь к ним 6.' },
+      { parts: ['13 + 6 = ', { box: '19' }], why: '3 + 6 = 9, и ещё десяток: 19.', hint: '13 = 10 + 3. Сложи единицы: 3 + 6.' },
+      { parts: ['81 + 5 = ', { box: '86' }], why: '1 + 5 = 6, и 80: 86.', hint: '81 = 80 + 1. Сложи единицы: 1 + 5.' },
+      { parts: ['3 + 46 = ', { box: '49' }], why: '46 = 40 + 6; 6 + 3 = 9; 40 + 9 = 49.', hint: 'Разложи 46 на 40 и 6. Три — это единицы: сложи их с шестью.' },
+      { parts: ['45 + 3 = ', { box: '48' }], why: '45 + 3 = 40 + (5 + 3) = 48.', hint: '45 = 40 + 5. Прибавь 3 к пяти.' },
+    ]),
+  }], done) }],
+
+  ['tens', 'Прибавляем десятки: 36 + 20', (m) => {
+    const p = panel(0);
+    const qx = c20_question(p, 20, TEN, .3, m('split'));
+    const ask = mline(p, '?', qx + 6, 230, .3, CH, 64, 'start');
+    c20_table(p, .3);
+    const { B, S } = c20_36(p, m('n36'));
+    B.forEach(b => pulse(b, m('split', .3), 1.06));
+    S.forEach(s => pulse(s, m('split', .6), 1.08));
+    // two bundles come into the bottom row, then join the tens
+    const add = [0, 1].map(i => {
+      const b = uBundle(p, C20_TX[i], C20_Y2 + 40, TEN, C20_H);
+      tw(b, { o: 1, y: C20_Y2 }, m('add', i * .2), .5, out);
+      tw(b, { x: C20_TX[3 + i], y: C20_Y1 }, m('join', i * .15), .8, io);
+      return b;
+    });
+    [...B, ...add].forEach(b => pulse(b, m('join', 1.1), 1.05));
+    uBracket(p, 113, 607, 362, '5 дес.', TEN, m('join', 1.2), { size: 30 });
+    c20_row(p, [['30', TEN], [' + ', CH], ['20', TEN], [' = ', CH], ['50', TEN]], 1100, 460, m('join', 1), 56, 'start');
+    S.forEach(s => pulse(s, m('ones'), 1.08));
+    uBracket(p, c20_sx(0) - 20, c20_sx(5) + 20, 362, '6 ед.', ONE, m('ones', .2), { size: 30 });
+    c20_row(p, [['50', TEN], [' + ', CH], ['6', ONE], [' = ', CH], ...c20_n(56)], 1100, 555, m('ones', .6), 56, 'start');
+    hide(ask, m('ones', 1.6), .2);
+    pulse(c20_row(p, c20_n(56), qx + 6, 230, m('ones', 1.7), 64, 'start'), m('ones', 1.8), 1.15);
+    c20_row(p, [...c20_n(36), [' + ', CH], ['20', TEN], [' = (', CH], ['30', TEN], [' + ', CH], ['20', TEN], [') + ', CH], ['6', ONE], [' = ', CH], ...c20_n(56)], 800, 720, m('eq'), 68);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    c20_row(p, [...c20_n(36), [' + ', CH], ['20', TEN], [' = ', CH], ...c20_n(56)], 120, 300, .3, 50, 'start');
+    c20_row(p, [['30', TEN], [' + ', CH], ['20', TEN], [' = ', CH], ['50', TEN]], 120, 380, .4, 40, 'start');
+    text(p, 'десятки — с десятками', 120, 440, .5, { size: 28, fill: TEN, weight: 600 });
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-tens', prompt: ['Вычисли.'],
+    build: blanks([
+      { parts: ['56 + 30 = ', { box: '86' }], why: '50 + 30 = 80, и 6: 86.', hint: '56 = 50 + 6. Сложи десятки: 50 + 30.' },
+      { parts: ['53 + 10 = ', { box: '63' }], why: '50 + 10 = 60, и 3: 63.', hint: '10 — это один десяток. Прибавь его к пяти десяткам.' },
+      { parts: ['18 + 60 = ', { box: '78' }], why: '10 + 60 = 70, и 8: 78.', hint: '18 = 10 + 8. Сложи десятки: 10 + 60.' },
+      { parts: ['30 + 24 = ', { box: '54' }], why: '30 + 20 = 50, и 4: 54.', hint: 'Разложи 24 на 20 и 4. Тридцать — это десятки: сложи их с двадцатью.' },
+      { parts: ['65 + 30 = ', { box: '95' }], why: '60 + 30 = 90, и 5: 95.', hint: '65 = 60 + 5. Сложи десятки: 60 + 30.' },
+      { parts: ['45 + 30 = ', { box: '75' }], why: '45 + 30 = (40 + 30) + 5 = 75.', hint: '45 = 40 + 5. Прибавь 30 к сорока.' },
+    ]),
+  }], done) }],
+
+  ['trap', 'Не путай единицы с десятками', (m) => {
+    const p = panel(0);
+    const L = 420, Rx = 1180;
+    const w1 = c20_row(p, [['36 + 2 = 56', COL.bad]], L, 190, m('w1'), 64);
+    c20_strike(p, w1, L, 190, m('w1', 3));
+    text(p, 'два прибавили к десяткам', L, 250, m('w1', 1.2), { size: 28, fill: COL.bad, anchor: 'middle' });
+    [400, 440].forEach((x, i) => show(uStick(p, x, 300, ONE, 110), m('p1', i * .2), .4));
+    text(p, '2 — это 2 единицы', L, 460, m('p1', .6), { size: 32, fill: ONE, anchor: 'middle', weight: 600 });
+    const w2 = c20_row(p, [['36 + 20 = 38', COL.bad]], Rx, 190, m('w2'), 64);
+    c20_strike(p, w2, Rx, 190, m('w2', 4));
+    text(p, 'двадцать прибавили к единицам', Rx, 250, m('w2', 1.6), { size: 28, fill: COL.bad, anchor: 'middle' });
+    [1125, 1235].forEach((x, i) => show(uBundle(p, x, 300, TEN, 110), m('p2', i * .2), .4));
+    text(p, '20 — это 2 десятка', Rx, 460, m('p2', .6), { size: 32, fill: TEN, anchor: 'middle', weight: 600 });
+    const r1 = c20_row(p, [...c20_n(36), [' + ', CH], ['2', ONE], [' = ', CH], ...c20_n(38)], L, 570, m('right'), 64);
+    c20_tick(p, L + r1._w / 2 + 24, 545, m('right', 1.2));
+    const r2 = c20_row(p, [...c20_n(36), [' + ', CH], ['20', TEN], [' = ', CH], ...c20_n(56)], Rx, 570, m('right', 2.6), 64);
+    c20_tick(p, Rx + r2._w / 2 + 24, 545, m('right', 3.6));
+    const box = mk('rect', { x: 330, y: 620, width: 940, height: 136, rx: 16, fill: 'none', stroke: COL.good, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+    put(box, { o: 0 }); show(box, m('rule'), .4);
+    text(p, 'Единицы складывают с единицами.', 800, 674, m('rule', .3), { size: 36, fill: ONE, anchor: 'middle', weight: 600 });
+    text(p, 'Десятки складывают с десятками.', 800, 728, m('rule', 2), { size: 36, fill: TEN, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    text(p, 'единицы — с единицами', 120, 290, .3, { size: 30, fill: ONE, weight: 600 });
+    text(p, 'десятки — с десятками', 120, 350, .4, { size: 30, fill: TEN, weight: 600 });
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-errors', prompt: ['Найди ошибки: какие записи верные, а какие — нет?'],
+    build: grid([
+      { parts: ['36 + 2 = 38'], ans: ['ok'], why: '6 + 2 = 8, десятки те же: 38.' },
+      { parts: ['47 + 2 = 67'], ans: ['no'], why: 'Два прибавили к десяткам. Верно: 7 + 2 = 9, значит, 47 + 2 = 49.' },
+      { parts: ['25 + 30 = 28'], ans: ['no'], why: 'Тридцать прибавили к единицам. Верно: 20 + 30 = 50, значит, 25 + 30 = 55.' },
+      { parts: ['61 + 30 = 91'], ans: ['ok'], why: '60 + 30 = 90, и ещё 1: 91.' },
+      { parts: ['4 + 52 = 56'], ans: ['ok'], why: '2 + 4 = 6, и 50: 56.' },
+      { parts: ['33 + 40 = 37'], ans: ['no'], why: 'Сорок прибавили к единицам. Верно: 30 + 40 = 70, значит, 33 + 40 = 73.' },
+    ], [['ok', 'верно', COL.good, '1'], ['no', 'неверно', COL.bad, '2']], { multi: false }),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['36 = 30 + 6', 'w1', true],
+     ['36 + 2 = 30 + (6 + 2) = 38', 'w2', true],
+     ['36 + 20 = (30 + 20) + 6 = 56', 'w3', true],
+     ['Единицы — с единицами, десятки — с десятками.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-calc', prompt: ['Вычисли или заполни окошки.'],
+    build: blanks([
+      { parts: ['43 + 50 = ', { box: '93' }], why: '40 + 50 = 90, и 3: 93.', hint: '50 — это десятки. Сложи их с сорока.' },
+      { parts: ['62 + 4 = ', { box: '66' }], why: '2 + 4 = 6, и 60: 66.', hint: '4 — это единицы. Сложи их с двумя.' },
+      { parts: ['31 + 6 = ', { box: '37' }], why: '1 + 6 = 7, и 30: 37.', hint: 'Сложи единицы: 1 + 6.' },
+      { parts: ['24 + 40 = ', { box: '64' }], why: '20 + 40 = 60, и 4: 64.', hint: 'Сложи десятки: 20 + 40.' },
+      { parts: ['20 + 73 = ', { box: '93' }], why: '20 + 70 = 90, и 3: 93.', hint: '73 = 70 + 3. Двадцать — это десятки.' },
+      { parts: ['52 + ', { box: '5' }, ' = 57'], why: 'Десятки те же, единиц стало на 5 больше: 2 + 5 = 7.', hint: 'Сколько единиц было и сколько стало?' },
+      { parts: [{ box: '36' }, ' + 30 = 66'], why: '66 − 30 = 36. Проверка: 30 + 30 = 60, и 6: 66.', hint: 'Единицы не изменились — их 6. Сколько было десятков до того, как прибавили 3 десятка?' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-books', prompt: ['В классной библиотеке было 34 книги. Ребята принесли ещё 20 книг. Сколько книг стало в библиотеке?'],
+    build: choice([['54 книги'], ['36 книг'], ['14 книг']], 0,
+      'Книг стало больше: 34 + 20. Десятки с десятками: 30 + 20 = 50, и 4: 54 книги.',
+      [null, 'Здесь 20 прибавили к единицам: 4 + 2. Но 20 — это 2 десятка: 30 + 20 = 50, и 4 — 54.',
+       'Книги принесли — их стало больше, значит, надо прибавлять: 34 + 20 = 54.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

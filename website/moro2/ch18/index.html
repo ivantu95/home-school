@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Свойства сложения</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 18, title: 'Свойства сложения', minutes: 10, language: 'ru', next: '../ch19/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: the first addend is blue (COL.whole), the second pink (COL.rat), the third orange (COL.task);
+// a group of addends (a ring around dots, brackets) is lilac (COL.real); a value is green (COL.good); a mistake — COL.bad.
+// With tens and ones (the `tens` beat) the book's rule holds: tens blue, ones orange.
+const A1 = COL.whole, A2 = COL.rat, A3 = COL.task, GR = COL.real, VAL = COL.good;
+// A row of hidden math tokens: items are strings or [string, colour]. Brackets are lilac.
+function c18_row(p, items, x, y, size = 64, anchor = 'middle') {
+  return tokens(p, items.map(it => Array.isArray(it) ? { t: it[0], fill: it[1] } : (it === '(' || it === ')') ? { t: it, fill: GR } : it), { x, y, size, anchor, o: 0 });
+}
+const c18_left = row => row[0]._px - row[0]._w / 2;
+const c18_right = row => row[row.length - 1]._px + row[row.length - 1]._w / 2;
+const c18_showRow = (row, t0, step = 0) => row.forEach((e, i) => show(e, t0 + i * step, .4));
+// n dots in a row starting at x (centres `step` px apart). Hidden; returns the circles.
+function c18_dots(p, x, y, n, colr, step = 50, r = 18) {
+  return Array.from({ length: n }, (_, i) => { const c = mk('circle', { cx: 0, cy: 0, r, fill: colr }, p); return put(c, { x: x + i * step, y, o: 0 }); });
+}
+// Move dots to new x positions (xs[i]); lift > 0 makes them hop over (up), lift < 0 under (down).
+function c18_slide(dots, xs, t0, lift = 0, dur = .9) {
+  dots.forEach((d, i) => {
+    tw(d, { x: xs[i] }, t0, dur);
+    if (lift) { const y = st(d).y; tw(d, { y: y - lift }, t0, dur / 2, out); tw(d, { y }, t0 + dur / 2, dur / 2); }
+  });
+}
+// Reorder the tokens of a row (order = old indexes in their new order). Moved numbers hop: the first up, the next down.
+function c18_reorder(row, order, t0, lift = 56) {
+  const next = order.map(k => row[k]);
+  let hop = 0;
+  return layRow(next, row, e => {
+    tw(e, { x: e._px }, t0, .9);
+    const k = next.indexOf(e);
+    if (row[k] !== e && /\d/.test(e.textContent)) {
+      const dy = hop++ % 2 ? lift * .6 : -lift;
+      tw(e, { y: row.y + dy }, t0, .45, out); tw(e, { y: row.y }, t0 + .45, .45);
+    }
+  });
+}
+// Put lilac brackets around tokens i..j of a row; the row makes room for them. Returns the new row.
+function c18_brk(row, i, j, t0, colr = GR) {
+  const p = row[0].parentNode, { size, y } = row;
+  const b = s => { const e = M(p, [s], { size, fill: colr, o: 0, y }); e._new = true; return e; };
+  const L = b('('), Rb = b(')');
+  const next = [...row.slice(0, i), L, ...row.slice(i, j + 1), Rb, ...row.slice(j + 1)];
+  return layRow(next, row, e => {
+    if (e._new) { e._new = false; put(e, { x: e._px }); show(e, t0 + .4, .4); }
+    else tw(e, { x: e._px }, t0, .5);
+  });
+}
+// A lilac ring drawn around a group of dots from x1 to x2 (dot centres) at height y.
+function c18_ring(p, x1, x2, y, t0, colr = GR, pad = 30) {
+  const l = x1 - pad, r = x2 + pad, t = y - pad, b = y + pad, k = pad;
+  const d = `M${l + k} ${t}H${r - k}Q${r} ${t} ${r} ${y}Q${r} ${b} ${r - k} ${b}H${l + k}Q${l} ${b} ${l} ${y}Q${l} ${t} ${l + k} ${t}Z`;
+  const e = path(p, d, { stroke: colr, 'stroke-width': 4, fill: colr, 'fill-opacity': .06 }, { d: 0 });
+  draw(e, t0, .7);
+  return e;
+}
+// An arc over two tokens of a row (a pair that makes ten).
+function c18_pair(p, a, b, y, h, colr, t0) {
+  const e = path(p, `M${a._px} ${y}Q${(a._px + b._px) / 2} ${y - h} ${b._px} ${y}`, { stroke: colr, 'stroke-width': 4 }, { d: 0 });
+  draw(e, t0, .6);
+  return e;
+}
+// A framed rule; lines: one or two strings.
+function c18_rule(p, lines, y, t0, colr = GR, w = 1200) {
+  const g = G(p, { o: 0 }), L = [].concat(lines), hh = 30 + L.length * 46;
+  mk('rect', { x: 800 - w / 2, y: y - 44, width: w, height: hh, rx: 14, fill: colr, 'fill-opacity': .1, stroke: colr, 'stroke-width': 3 }, g);
+  L.forEach((s, i) => T(g, s, { x: 800, y: y + 4 + i * 46, size: 34, fill: COL.chalk, weight: 600, anchor: 'middle' }));
+  show(g, t0);
+  return g;
+}
+function c18_cross(p, x1, y1, x2, y2, t0) {
+  const e = path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+  draw(e, t0, .4);
+  return e;
+}
+// A card with a sum (for the workbook task). Returns { g, box }.
+function c18_card(p, str, x, y, t0, w = 280, h = 100) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x, y, width: w, height: h, rx: 12, fill: COL.whole, 'fill-opacity': .06, stroke: COL.whole, 'stroke-width': 3 }, g);
+  M(g, [str], { x: x + w / 2, y: y + h / 2 + 16, size: 48 });
+  show(g, t0);
+  return { g, box: [x - 8, y - 8, w + 16, h + 16] };
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Свойства сложения', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 18', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Свойства сложения', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'складываем в любом порядке, как удобнее', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['swap', 'Переставим слагаемые', (m) => {
+    const p = panel(0);
+    // 5 + 3: five blue dots and three pink ones; then the groups swap places
+    let row = c18_row(p, [['5', A1], ' + ', ['3', A2]], 800, 150, 72);
+    c18_showRow(row, .3, .2);
+    const blue = c18_dots(p, 620, 240, 5, A1), pink = c18_dots(p, 890, 240, 3, A2);
+    blue.forEach((d, i) => show(d, m('a') + i * .06, .3));
+    pink.forEach((d, i) => show(d, m('a', .6) + i * .06, .3));
+    const v1 = text(p, '= 8', c18_right(row) + 30, 150, m('a', 2.2), { size: 72, fill: VAL, weight: 700 });
+    hide(v1, m('swap', -.2), .3);
+    c18_slide(blue, blue.map((_, i) => 790 + i * 50), m('swap', .2), 50);
+    c18_slide(pink, pink.map((_, i) => 620 + i * 50), m('swap', .2), -50);
+    row = c18_reorder(row, [2, 1, 0], m('swap', .2));
+    show(v1, m('same', 2.4), .4); pulse(v1, m('same', 2.6), 1.25);
+    // the equality and the rule
+    const eq = c18_row(p, [['5', A1], ' + ', ['3', A2], [' = ', VAL], ['3', A2], ' + ', ['5', A1]], 800, 390, 64);
+    c18_showRow(eq, m('eq'), .12);
+    c18_rule(p, 'От перестановки слагаемых сумма не меняется.', 500, m('rule'), GR, 1000);
+    text(p, 'переместительное свойство сложения', 800, 600, m('name'), { size: 30, fill: GR, anchor: 'middle', weight: 600 });
+    draw(path(p, 'M120 650H1480', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('easy', -.5), .6);
+    // 2 + 37 is easier as 37 + 2
+    let e2 = c18_row(p, [['2', A1], ' + ', ['37', A2]], 700, 770, 64);
+    c18_showRow(e2, m('easy', 1.2), .15);
+    e2 = c18_reorder(e2, [2, 1, 0], m('turn'));
+    const v2 = mline(p, '= 39', c18_right(e2) + 20, 770, m('val'), VAL, 64, 'start');
+    text(p, 'к большему прибавлять легче', c18_right(e2) + 60 + v2._w, 760, m('val', .8), { size: 28, fill: COL.dim });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 110, 240, .2, { size: 30, fill: COL.dim });
+    mline(p, '5 + 3 = 3 + 5', 110, 320, .3, COL.chalk, 50, 'start');
+    text(p, 'Сравни и другие пары.', 110, 420, .5, { size: 28, fill: COL.dim });
+    text(p, 'Смотри внимательно:', 110, 460, .5, { size: 28, fill: COL.dim });
+    text(p, 'числа те же или нет?', 110, 500, .5, { size: 28, fill: COL.dim });
+  }, { ask: done => quiz({ x: 560, y: 60, w: 960, cls: 'side' }, [{
+    id: 'c-swap', prompt: ['Сравни выражения: поставь знак <, = или >.'],
+    build: grid([
+      { parts: ['8 + 10  ○  10 + 8'], ans: ['eq'], why: 'Слагаемые те же, только переставлены: 18 = 18.' },
+      { parts: ['9 + 2  ○  2 + 8'], ans: ['gt'], why: 'Тут не те же числа: 9 + 2 = 11, 2 + 8 = 10, а 11 > 10.' },
+      { parts: ['40 + 7  ○  7 + 40'], ans: ['eq'], why: 'От перестановки слагаемых сумма не меняется: 47 = 47.' },
+      { parts: ['4 + 50  ○  50 + 5'], ans: ['lt'], why: '4 + 50 = 54, 50 + 5 = 55, а 54 < 55.' },
+      { parts: ['6 + 30  ○  30 + 6'], ans: ['eq'], why: 'Слагаемые переставлены: 36 = 36.' },
+      { parts: ['7 + 3  ○  3 + 6'], ans: ['gt'], why: '7 + 3 = 10, 3 + 6 = 9, а 10 > 9. Числа тут разные!' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['group', 'Соседние слагаемые', (m) => {
+    const p = panel(0);
+    const X0 = 150, STEP = 50, xs = k => X0 + k * STEP;
+    const rowDots = (y, t0) => {
+      const d = [...c18_dots(p, xs(0), y, 5, A1), ...c18_dots(p, xs(5), y, 3, A2), ...c18_dots(p, xs(8), y, 2, A3)];
+      d.forEach((c, i) => show(c, t0 + i * .05, .3));
+      return d;
+    };
+    // first way: (5 + 3) + 2
+    rowDots(200, m('dots'));
+    const r1 = c18_row(p, ['(', ['5', A1], ' + ', ['3', A2], ')', ' + ', ['2', A3]], 760, 218, 60, 'start');
+    c18_showRow(r1, m('g1'), .08);
+    c18_ring(p, xs(0), xs(7), 200, m('g1'));
+    text(p, '8', (xs(0) + xs(7)) / 2, 160, m('v1', .2), { size: 34, fill: GR, anchor: 'middle', weight: 700 });
+    const x1 = c18_right(r1) + 24;
+    const wv1 = mline(p, '= 8 + 2', x1, 218, m('v1'), COL.chalk, 60, 'start');
+    mline(p, '= 10', x1 + wv1._w + 16, 218, m('v1b'), VAL, 60, 'start');
+    // second way: 5 + (3 + 2)
+    rowDots(380, m('g2', -.6));
+    const r2 = c18_row(p, [['5', A1], ' + ', '(', ['3', A2], ' + ', ['2', A3], ')'], 760, 398, 60, 'start');
+    c18_showRow(r2, m('g2'), .08);
+    c18_ring(p, xs(5), xs(9), 380, m('g2', .3));
+    text(p, '5', (xs(5) + xs(9)) / 2, 340, m('v2', .2), { size: 34, fill: GR, anchor: 'middle', weight: 700 });
+    const x2 = c18_right(r2) + 24;
+    const wv2 = mline(p, '= 5 + 5', x2, 398, m('v2'), COL.chalk, 60, 'start');
+    mline(p, '= 10', x2 + wv2._w + 16, 398, m('v2b'), VAL, 60, 'start');
+    // the equality and the rule
+    const eq = c18_row(p, ['(', ['5', A1], ' + ', ['3', A2], ')', ' + ', ['2', A3], [' = ', VAL], ['5', A1], ' + ', '(', ['3', A2], ' + ', ['2', A3], ')'], 800, 540, 60);
+    c18_showRow(eq, m('eq'), .06);
+    c18_rule(p, ['Результат сложения не изменится,', 'если соседние слагаемые заменить их суммой.'], 650, m('rule'), GR, 1000);
+    text(p, 'сочетательное свойство сложения', 800, 830, m('name'), { size: 30, fill: GR, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 100, 220, .2, { size: 30, fill: COL.dim });
+    mline(p, '(5 + 3) + 2 = 10', 100, 300, .3, COL.chalk, 46, 'start');
+    mline(p, '5 + (3 + 2) = 10', 100, 380, .4, COL.chalk, 46, 'start');
+    text(p, 'Сначала — в скобках.', 100, 470, .5, { size: 28, fill: COL.dim });
+  }, { ask: done => quiz({ x: 580, y: 70, w: 940, cls: 'side' }, [{
+    id: 'c-group', prompt: ['Вычисли двумя способами и проверь, что ответы одинаковые.'],
+    build: blanks([
+      { parts: ['(2 + 7) + 3 = ', { box: '12' }], why: 'В скобках 2 + 7 = 9, потом 9 + 3 = 12.', hint: 'Сначала сложи числа в скобках: 2 + 7.' },
+      { parts: ['2 + (7 + 3) = ', { box: '12' }], why: 'В скобках 7 + 3 = 10, потом 2 + 10 = 12. Ответ тот же!', hint: 'Сначала сложи числа в скобках: 7 + 3.' },
+      { parts: ['(6 + 1) + 9 = ', { box: '16' }], why: 'В скобках 6 + 1 = 7, потом 7 + 9 = 16.', hint: 'Сначала скобки: 6 + 1. Потом прибавь 9.' },
+      { parts: ['6 + (1 + 9) = ', { box: '16' }], why: 'В скобках 1 + 9 = 10, потом 6 + 10 = 16. Так считать легче!', hint: 'Сначала скобки: 1 + 9.' },
+    ]),
+  }], done) }],
+
+  ['handy', 'Удобный порядок', (m) => {
+    const p = panel(0);
+    const xs = k => 425 + k * 50, Y = 200;
+    const blue = c18_dots(p, xs(0), Y, 7, A1), pink = c18_dots(p, xs(7), Y, 6, A2), orange = c18_dots(p, xs(13), Y, 3, A3);
+    [...blue, ...pink, ...orange].forEach((d, i) => show(d, .3 + i * .04, .3));
+    let row = c18_row(p, [['7', A1], ' + ', ['6', A2], ' + ', ['3', A3]], 800, 400, 72);
+    c18_showRow(row, .5, .15);
+    // left to right is harder
+    const hard = text(p, '7 + 6 = 13 — через десяток', 800, 500, m('ltr'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    hide(hard, m('look', -.2), .4);
+    [...blue, ...orange].forEach(d => pulse(d, m('look', 1), 1.3));
+    // the three orange dots hop to the blue ones; the pink ones step right
+    c18_slide(orange, orange.map((_, i) => xs(7 + i)), m('move'), 70);
+    c18_slide(pink, pink.map((_, i) => xs(10 + i)), m('move'), 0);
+    row = c18_reorder(row, [0, 1, 4, 3, 2], m('move'));
+    row = c18_brk(row, 0, 2, m('br'));
+    c18_ring(p, xs(0), xs(9), Y, m('br'));
+    text(p, '10', (xs(0) + xs(9)) / 2, Y - 46, m('ten', .2), { size: 34, fill: GR, anchor: 'middle', weight: 700 });
+    row = collapse(row, 0, 4, ['10'], m('ten'), { color: GR });
+    row = collapse(row, 0, 2, ['16'], m('val'), { color: GR, fill: VAL });
+    mline(p, '7 + 6 + 3 = (7 + 3) + 6 = 16', 800, 560, m('val', 2), COL.chalk, 48);
+    c18_rule(p, 'Сначала складывай числа, которые дают круглое число.', 700, m('rule'), GR, 1100);
+  }],
+
+  ['pairs', 'Пары до десяти', (m) => {
+    const p = panel(0);
+    let row = c18_row(p, ['6', ' + ', '9', ' + ', '4', ' + ', '1'], 800, 200, 72);
+    c18_showRow(row, .3, .12);
+    const a1 = c18_pair(p, row[0], row[4], 132, 60, A1, m('p1'));
+    const a2 = c18_pair(p, row[2], row[6], 222, -50, A2, m('p2'));
+    // the mistake: one addend got lost
+    const W = '6 + 9 + 4 + 1 = (6 + 4) + 9 = 19';
+    const bad = mline(p, W, 800, 340, m('wrong'), COL.bad, 50);
+    const bw = bad._w;
+    const cr = c18_cross(p, 800 - bw / 2 - 10, 344, 800 + bw / 2 + 10, 310, m('wrong', 3.6));
+    const lost = text(p, 'где 1?', 800 + bw / 2 + 30, 330, m('wrong', 1.6), { size: 32, fill: COL.bad, weight: 700 });
+    [bad, lost, cr].forEach(e => hide(e, m('ok', 2.6), .4));
+    // the right way: pairs side by side, in brackets
+    [a1, a2].forEach(e => hide(e, m('ok'), .3));
+    row = c18_reorder(row, [0, 1, 4, 3, 2, 5, 6], m('ok', .3));
+    row = c18_brk(row, 0, 2, m('ok', 1.4));
+    row = c18_brk(row, 6, 8, m('ok', 1.6));
+    row = collapse(row, 0, 4, ['10'], m('c1'), { color: GR });
+    row = collapse(row, 2, 6, ['10'], m('c2'), { color: GR });
+    row = collapse(row, 0, 2, ['20'], m('val'), { color: GR, fill: VAL });
+    mline(p, '6 + 9 + 4 + 1 = (6 + 4) + (9 + 1) = 20', 800, 380, m('val', 2), COL.chalk, 48);
+    draw(path(p, 'M120 480H1480', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('more', -.5), .6);
+    mline(p, '17 + 8 + 3 + 2 = (17 + 3) + (8 + 2)', 800, 590, m('more'), COL.chalk, 48);
+    mline(p, '= 20 + 10 = 30', 800, 680, m('more', 3.5), COL.chalk, 48);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Какая сумма равна этой?', 800, 470, .2, { size: 28, fill: COL.dim, anchor: 'middle' });
+    mline(p, '7 + 6 + 8', 800, 560, .3, COL.chalk, 64);
+    S.c18c = ['12 + 6', '9 + 9', '14 + 7', '15 + 3'].map((s, i) => c18_card(p, s, 150 + i * 340, 640, .5 + i * .1));
+  }, { ask: done => quiz({ x: 200, y: 50, w: 1200, cls: 'side' }, [{
+    id: 'c-cards', prompt: ['Щёлкни по карточке, на которой сумма с таким же значением, как 7 + 6 + 8.'],
+    build: pickEls(S.c18c.map((c, i) => ({ box: c.box, el: c.g, label: `Карточка ${i + 1}` })), 2,
+      '6 + 8 = 14 — соседние слагаемые заменили их суммой, а 7 переставили: 14 + 7 = 21. И 7 + 6 + 8 = 21.',
+      () => 'Значение этой суммы — 18, а 7 + 6 + 8 = 21. Сложи 6 и 8 — какое число получится?'),
+  }, {
+    id: 'c-handy', prompt: ['Как удобнее всего сложить 8 + 7 + 2?'],
+    build: choice([['(8 + 2) + 7'], ['(8 + 7) + 2'], ['8 + (7 + 2)']], 0,
+      '8 + 2 = 10 — круглое число, а 10 + 7 = 17. Удобно!',
+      [null, 'Так тоже верно, но 8 + 7 = 15 — это переход через десяток. Удобнее сначала 8 + 2 = 10.',
+       'Так тоже верно, но потом 8 + 9 — снова переход через десяток. Удобнее сначала 8 + 2 = 10.']),
+  }], done) }],
+
+  ['tens', 'Десятки с десятками', (m) => {
+    const p = panel(0);
+    const B = 104, H = 140, Y = 190;
+    const b1 = [...Array(5)].map((_, i) => uBundle(p, 230 + i * B, Y, A1, H));
+    const sticks = [...Array(6)].map((_, k) => uStick(p, 740 + k * 22, Y, A3, H));
+    const b2 = [...Array(3)].map((_, i) => uBundle(p, 960 + i * B, Y, A1, H));
+    b1.forEach((g, i) => show(g, m('t1') + i * .08, .3));
+    sticks.forEach((g, i) => show(g, m('o1') + i * .06, .3));
+    b2.forEach((g, i) => show(g, m('t2') + i * .1, .3));
+    const l1 = text(p, '50', 230 + 2 * B + 5, 380, m('t1', .5), { size: 40, fill: A1, anchor: 'middle', weight: 700 });
+    const l2 = text(p, '6', 795 + 5, 380, m('o1', .5), { size: 40, fill: A3, anchor: 'middle', weight: 700 });
+    const l3 = text(p, '30', 960 + B + 5, 380, m('t2', .5), { size: 40, fill: A1, anchor: 'middle', weight: 700 });
+    let row = c18_row(p, [['50', A1], ' + ', ['6', A3], ' + ', ['30', A1]], 800, 540, 72);
+    c18_showRow(row, .3, .15);
+    // tens go to tens
+    [l1, l2, l3].forEach(e => hide(e, m('move', -.2), .3));
+    b2.forEach((g, i) => { tw(g, { x: 230 + (5 + i) * B }, m('move', .2), 1.1); tw(g, { y: Y - 70 }, m('move', .2), .55, out); tw(g, { y: Y }, m('move', .75), .55); });
+    sticks.forEach((g, k) => tw(g, { x: 1080 + k * 22 }, m('move', .2), 1.1));
+    row = c18_reorder(row, [0, 1, 4, 3, 2], m('move', .2));
+    row = c18_brk(row, 0, 2, m('move', 1.5));
+    text(p, '80', 230 + 3.5 * B + 5, 380, m('tens', .4), { size: 40, fill: A1, anchor: 'middle', weight: 700 });
+    text(p, '6', 1135 + 5, 380, m('tens', .4), { size: 40, fill: A3, anchor: 'middle', weight: 700 });
+    row = collapse(row, 0, 4, ['80'], m('tens'), { color: GR });
+    row = collapse(row, 0, 2, ['86'], m('val'), { color: GR, fill: VAL });
+    mline(p, '50 + 6 + 30 = (50 + 30) + 6 = 86', 800, 650, m('val', 2), COL.chalk, 48);
+    c18_rule(p, 'Десятки — с десятками, единицы — с единицами.', 770, m('rule'), GR, 1000);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 100, 220, .2, { size: 30, fill: COL.dim });
+    mline(p, '50 + 6 + 30 =', 100, 300, .3, COL.chalk, 44, 'start');
+    mline(p, '= (50 + 30) + 6 = 86', 100, 370, .4, COL.chalk, 44, 'start');
+    text(p, 'Ищи круглые числа', 100, 470, .5, { size: 28, fill: COL.dim });
+    text(p, 'и пары до десяти.', 100, 510, .5, { size: 28, fill: COL.dim });
+  }, { ask: done => quiz({ x: 580, y: 70, w: 940, cls: 'side' }, [{
+    id: 'c-tens', prompt: ['Вычисли удобным способом.'],
+    build: blanks([
+      { parts: ['20 + 9 + 40 = ', { box: '69' }], why: '(20 + 40) + 9 = 60 + 9 = 69.', hint: 'Сложи сначала десятки: 20 + 40.' },
+      { parts: ['7 + 20 + 3 + 70 = ', { box: '100' }], why: '(7 + 3) + (20 + 70) = 10 + 90 = 100.', hint: '7 и 3 дают десять, 20 и 70 — девяносто.' },
+      { parts: ['1 + 50 + 40 + 9 = ', { box: '100' }], why: '(1 + 9) + (50 + 40) = 10 + 90 = 100.', hint: 'Найди пару до десяти: 1 и 9. Потом сложи десятки.' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 150, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['5 + 3 = 3 + 5', 'w1'],
+     ['(5 + 3) + 2 = 5 + (3 + 2)', 'w2'],
+     ['Складывать можно в любом порядке.', 'w3'],
+     ['7 + 6 + 3 = (7 + 3) + 6 — сначала круглое.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 270 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 40, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-handy', prompt: ['Вычисли удобным способом.'],
+    build: blanks([
+      { parts: ['20 + 8 + 60 + 2 = ', { box: '90' }], why: '(20 + 60) + (8 + 2) = 80 + 10 = 90.', hint: 'Сложи десятки: 20 + 60. И пару до десяти: 8 + 2.' },
+      { parts: ['40 + 1 + 9 + 50 = ', { box: '100' }], why: '(40 + 50) + (1 + 9) = 90 + 10 = 100.', hint: 'Сложи десятки: 40 + 50. И пару до десяти: 1 + 9.' },
+      { parts: ['70 + 10 + 16 = ', { box: '96' }], why: '(70 + 10) + 16 = 80 + 16 = 96.', hint: 'Сначала 70 + 10.' },
+      { parts: ['20 + 5 + 5 + 30 = ', { box: '60' }], why: '(20 + 30) + (5 + 5) = 50 + 10 = 60.', hint: 'Сложи десятки: 20 + 30. И 5 + 5.' },
+      { parts: ['30 + 7 + 40 + 3 = ', { box: '80' }], why: '(30 + 40) + (7 + 3) = 70 + 10 = 80.', hint: '7 и 3 дают десять. Десятки: 30 + 40.' },
+      { parts: ['20 + 6 + 50 + 4 = ', { box: '80' }], why: '(20 + 50) + (6 + 4) = 70 + 10 = 80.', hint: '6 и 4 дают десять. Десятки: 20 + 50.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-compare', prompt: ['Сравни выражения: поставь знак <, = или >.'],
+    build: grid([
+      { parts: ['7 + (9 + 1)  ○  (7 + 9) + 1'], ans: ['eq'], why: 'Соседние слагаемые заменили их суммой — результат не изменился: 17 = 17.' },
+      { parts: ['3 + 7 + 7  ○  3 + (7 + 7)'], ans: ['eq'], why: '3 + 7 + 7 = 10 + 7 = 17 и 3 + 14 = 17.' },
+      { parts: ['6 + 9 + 4  ○  6 + 4 + 8'], ans: ['gt'], why: 'Слева (6 + 4) + 9 = 19, справа (6 + 4) + 8 = 18, а 19 > 18.' },
+      { parts: ['30 + 7 + 3  ○  30 + 9'], ans: ['gt'], why: '30 + (7 + 3) = 40, а 30 + 9 = 39. 40 > 39.' },
+      { parts: ['2 + 18 + 5  ○  20 + 6'], ans: ['lt'], why: '(2 + 18) + 5 = 20 + 5 = 25, а 20 + 6 = 26. 25 < 26.' },
+      { parts: ['8 + 6 − 1  ○  8 + (6 − 1)'], ans: ['eq'], why: '8 + 6 − 1 = 14 − 1 = 13 и 8 + (6 − 1) = 8 + 5 = 13.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

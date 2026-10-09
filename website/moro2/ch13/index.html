@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Час. Минута</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 13, title: 'Час. Минута', minutes: 10, language: 'ru', next: '../ch14/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: hours and the hour hand are blue (COL.whole), minutes and the minute hand are orange (COL.task).
+const HC = COL.whole, MC = COL.task;
+// A point on a circle: minute mark m (0…60, 0 = up, clockwise) at radius r.
+const c13_pt = (cx, cy, r, m) => { const a = m * Math.PI / 30; return [cx + r * Math.sin(a), cy - r * Math.cos(a)]; };
+// A sector of the clock face from minute m1 to minute m2 (two arcs, so a whole circle also works).
+function c13_sectorD(cx, cy, r, m1, m2) {
+  if (m2 - m1 < .02) return '';
+  const f = ([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+  const a = c13_pt(cx, cy, r, m1), b = c13_pt(cx, cy, r, (m1 + m2) / 2), c = c13_pt(cx, cy, r, m2);
+  return `M${cx} ${cy}L${f(a)}A${r} ${r} 0 0 1 ${f(b)}A${r} ${r} 0 0 1 ${f(c)}Z`;
+}
+// A clock face centred on (cx, cy), radius R, showing h:m. Starts hidden (show c.g).
+// Returns { g, ring, big, small, nums, under, hh, mh, labs } — under: a layer for sectors below the hands;
+// labs: minute labels 5…60 outside the face (only with mins: true, hidden).
+function c13_clock(p, cx, cy, R, { h = 12, m = 0, mins = false } = {}) {
+  const c = { g: G(p, { o: 0 }), cx, cy, R };
+  c.ring = mk('circle', { cx, cy, r: R, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.chalk, 'stroke-width': Math.max(3, R / 45) }, c.g);
+  let ds = '', db = '';
+  for (let i = 0; i < 60; i++) {
+    const [x1, y1] = c13_pt(cx, cy, i % 5 ? R * .89 : R * .8, i), [x2, y2] = c13_pt(cx, cy, R * .95, i);
+    const seg = `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    if (i % 5) ds += seg; else db += seg;
+  }
+  c.small = path(c.g, ds, { stroke: COL.dim, 'stroke-width': Math.max(1.5, R / 110) });
+  c.big = path(c.g, db, { stroke: COL.chalk, 'stroke-width': Math.max(3, R / 50) });
+  const ns = Math.max(24, R * .19);
+  c.nums = Array.from({ length: 12 }, (_, k) => {
+    const [x, y] = c13_pt(cx, cy, R * .64, (k + 1) * 5);
+    return T(c.g, String(k + 1), { x, y: y + ns * .36, size: ns, fill: COL.chalk, font: MATH, weight: 600, anchor: 'middle' });
+  });
+  c.under = G(c.g);
+  c.hh = G(c.g, { x: cx, y: cy });
+  path(c.hh, `M0 ${R * .1}V${-R * .5}`, { stroke: HC, 'stroke-width': Math.max(7, R * .065) });
+  c.mh = G(c.g, { x: cx, y: cy });
+  path(c.mh, `M0 ${R * .14}V${-R * .82}`, { stroke: MC, 'stroke-width': Math.max(4, R * .038) });
+  c.hub = mk('circle', { cx, cy, r: Math.max(6, R * .05), fill: COL.chalk }, c.g);
+  if (mins) c.labs = Array.from({ length: 12 }, (_, k) => {
+    const [x, y] = c13_pt(cx, cy, R * 1.17, (k + 1) * 5), sz = Math.max(24, R * .12);
+    const t = T(p, String((k + 1) * 5), { x, y: y + sz * .36, size: sz, fill: MC, weight: 700, anchor: 'middle', o: 0 });
+    put(t, { s: .4 });
+    return t;
+  });
+  c13_put(c, h, m);
+  return c;
+}
+// Set the hands at once; angles are cumulative, so running the clock forward always turns clockwise.
+function c13_put(c, h, m) { c.T = h * 60 + m; put(c.hh, { r: c.T * .5 }); put(c.mh, { r: c.T * 6 }); }
+// Run the clock to h:m.
+function c13_go(c, h, m, t0, dur = 1.2, ease = io) {
+  c.T = h * 60 + m;
+  tw(c.hh, { r: c.T * .5 }, t0, dur, ease);
+  tw(c.mh, { r: c.T * 6 }, t0, dur, ease);
+}
+// A sector under the hands, starting at minute m0. Grow it with c13_grow.
+function c13_sector(c, m0, colr, { r = .95, op = .25 } = {}) {
+  const e = path(c.under, '', { fill: colr, 'fill-opacity': op, stroke: colr, 'stroke-width': 2 });
+  Object.assign(e, { _c: c, _m0: m0, _r: r * c.R });
+  return e;
+}
+function c13_grow(e, m1, m2, t0, dur = 1.2, ease = io) {
+  const c = e._c;
+  prog(q => e.setAttribute('d', c13_sectorD(c.cx, c.cy, e._r, e._m0, m1 + (m2 - m1) * q)), t0, dur, ease);
+}
+// A pale dashed hand: where the minute hand should be.
+function c13_ghost(c, m) {
+  const [x, y] = c13_pt(c.cx, c.cy, c.R * .82, m);
+  const e = path(c.g, `M${c.cx} ${c.cy}L${x.toFixed(1)} ${y.toFixed(1)}`, { stroke: COL.chalk, 'stroke-width': Math.max(3, c.R * .025), 'stroke-dasharray': '10 9' });
+  put(e, { o: 0 });
+  return e;
+}
+// A wrong answer, then struck out in red.
+function c13_wrong(p, str, x, y, t0, tCross, size = 50) {
+  const e = mline(p, str, x, y, t0, COL.bad, size), w = e._w;
+  draw(path(p, `M${x - w / 2 - 14} ${y - 6}L${x + w / 2 + 14} ${y - size * .55}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), tCross, .4);
+  return e;
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Час. Минута', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 13', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Час. Минута', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'учимся узнавать время по часам', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['face', 'Циферблат', (m) => {
+    const p = panel(0);
+    const c = c13_clock(p, 560, 450, 300, { h: 10, m: 10 });
+    show(c.g, .2);
+    [c.big, c.small, c.hh, c.mh, c.hub, ...c.nums].forEach(e => put(e, { o: 0 }));
+    c.nums.forEach((n, k) => { put(n, { s: .4 }); pop(n, m('nums') + k * .12); });
+    show(c.big, m('big'), .6);
+    show(c.small, m('small'), .6);
+    show(c.hub, m('hh'), .3);
+    show(c.hh, m('hh'), .5); pulse(c.hh, m('hh', .5), 1.15);
+    show(c.mh, m('mh'), .5); pulse(c.mh, m('mh', .5), 1.1);
+    const l1 = path(p, 'M990 350H1060', { stroke: HC, 'stroke-width': 18 }); put(l1, { o: 0 }); show(l1, m('hh'));
+    text(p, 'часовая', 1090, 365, m('hh'), { size: 46, fill: HC, weight: 700 });
+    text(p, 'короткая, показывает часы', 990, 420, m('hh', .4), { size: 28, fill: COL.dim });
+    const l2 = path(p, 'M990 560H1110', { stroke: MC, 'stroke-width': 11 }); put(l2, { o: 0 }); show(l2, m('mh'));
+    text(p, 'минутная', 1140, 575, m('mh'), { size: 46, fill: MC, weight: 700 });
+    text(p, 'длинная, показывает минуты', 990, 630, m('mh', .4), { size: 28, fill: COL.dim });
+  }],
+
+  ['minute', 'Час и минута', (m) => {
+    const p = panel(0);
+    const c = c13_clock(p, 470, 460, 280, { h: 3, m: 0, mins: true });
+    show(c.g, .2);
+    const sec = c13_sector(c, 0, MC);
+    // one minute, then the first five
+    c13_go(c, 3, 1, m('one'), .6); c13_grow(sec, 0, 1, m('one'), .6);
+    c13_go(c, 3, 5, m('five'), 1.2, lin); c13_grow(sec, 1, 5, m('five'), 1.2, lin);
+    pop(c.labs[0], m('five', 1.2));
+    text(p, 'от чёрточки до чёрточки — 1 мин', 900, 250, m('one'), { size: 34, fill: MC, weight: 600 });
+    text(p, 'от числа до числа — 5 мин', 900, 320, m('five'), { size: 34, fill: MC, weight: 600 });
+    pulse(c.labs[0], m('go', 3), 1.4);
+    for (let k = 2; k <= 12; k++) {
+      const t0 = m('c' + k * 5);
+      c13_go(c, 3, k * 5, t0 - .5, .5); c13_grow(sec, (k - 1) * 5, k * 5, t0 - .5, .5);
+      pop(c.labs[k - 1], t0);
+    }
+    // the hour hand moved from 3 to 4
+    const [ax, ay] = c13_pt(c.cx, c.cy, c.R * .56, 15), [bx, by] = c13_pt(c.cx, c.cy, c.R * .56, 20);
+    draw(path(p, `M${ax.toFixed(1)} ${ay.toFixed(1)}A${c.R * .56} ${c.R * .56} 0 0 1 ${bx.toFixed(1)} ${by.toFixed(1)}`, { stroke: HC, 'stroke-width': 8 }, { d: 0 }), m('hour'), .6);
+    pulse(c.hh, m('hour', .3), 1.12);
+    text(p, 'часовая: от 3 до 4 — 1 ч', 900, 420, m('hour'), { size: 34, fill: HC, weight: 600 });
+    mline(p, '1 ч = 60 мин', 1180, 610, m('rule'), COL.chalk, 80);
+    draw(path(p, 'M930 640H1430', { stroke: COL.good, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const c = c13_clock(p, 380, 460, 270, { h: 3, m: 0 });
+    show(c.g, .2);
+  }, { ask: done => quiz({ x: 740, y: 120, w: 800, cls: 'side' }, [{
+    id: 'c-minutes', prompt: ['Сколько минут идёт минутная стрелка?'],
+    build: blanks([
+      { parts: ['от 12 до 1 — ', { box: '5' }, ' мин'], why: 'От числа до числа 5 маленьких чёрточек — 5 минут.', hint: 'Посчитай маленькие чёрточки от 12 до 1.' },
+      { parts: ['от 12 до 3 — ', { box: '15' }, ' мин'], why: 'Считаем пятёрками: 5, 10, 15.', hint: 'Считай пятёрками: до 1, до 2, до 3.' },
+      { parts: ['от 12 до 6 — ', { box: '30' }, ' мин'], why: '5, 10, 15, 20, 25, 30 — это полкруга.', hint: 'Считай пятёрками до шести.' },
+      { parts: ['1 ч = ', { box: '60' }, ' мин'], why: 'Целый круг минутной стрелки — 60 минут, это 1 час.', hint: 'Сколько минут длится целый круг минутной стрелки?' },
+    ]),
+  }], done) }],
+
+  ['read', 'Который час?', (m) => {
+    const p = panel(0);
+    const a = c13_clock(p, 260, 380, 180, { h: 3, m: 0 });
+    show(a.g, m('three'));
+    pulse(a.mh, m('three', 1.2), 1.12); pulse(a.hh, m('three', 4), 1.2);
+    text(p, 'ровно 3 ч', 260, 640, m('three', 4.2), { size: 44, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    const c = c13_clock(p, 860, 430, 260, { h: 7, m: 45, mins: true });
+    show(c.g, m('hr', -.4));
+    // the hour hand: past 7, not yet at 8
+    pulse(c.hh, m('hr', 1.4), 1.15);
+    const [ax, ay] = c13_pt(c.cx, c.cy, c.R * .56, 35), [bx, by] = c13_pt(c.cx, c.cy, c.R * .56, 40);
+    draw(path(p, `M${ax.toFixed(1)} ${ay.toFixed(1)}A${c.R * .56} ${c.R * .56} 0 0 1 ${bx.toFixed(1)} ${by.toFixed(1)}`, { stroke: HC, 'stroke-width': 8 }, { d: 0 }), m('hr', 2.5), .8);
+    text(p, '7 ч', 1390, 300, m('hr', 5), { size: 56, fill: HC, anchor: 'middle', weight: 700 });
+    // the minute hand: count by fives
+    pulse(c.mh, m('mn', .8), 1.08);
+    const sec = c13_sector(c, 0, MC);
+    for (let k = 1; k <= 9; k++) {
+      const t0 = m('c' + k * 5);
+      c13_grow(sec, (k - 1) * 5, k * 5, t0 - .3, .4);
+      pop(c.labs[k - 1], t0);
+    }
+    text(p, '45 мин', 1390, 390, m('c45', .3), { size: 56, fill: MC, anchor: 'middle', weight: 700 });
+    text(p, '7 ч 45 мин', 1390, 520, m('ans'), { size: 52, fill: COL.good, anchor: 'middle', weight: 700 });
+    c13_wrong(p, '8 ч 45 мин', 1390, 650, m('wrong'), m('wrong', .9), 44);
+    text(p, 'до 8 ещё не дошла', 1390, 710, m('wrong', 1.5), { size: 28, fill: COL.bad, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const c = c13_clock(p, 380, 460, 270, { h: 4, m: 10 });
+    show(c.g, .2);
+  }, { ask: done => quiz({ x: 740, y: 140, w: 800, cls: 'side' }, [{
+    id: 'c-read', prompt: ['Какое время показывают часы?'],
+    build: choice([['4 ч 10 мин'], ['2 ч 20 мин'], ['4 ч 2 мин']], 0,
+      'Короткая стрелка прошла 4 — это 4 ч. Длинная на 2: 5, 10 — это 10 мин.',
+      [null, 'Стрелки перепутаны. Короткая — часовая, она у 4. Длинная — минутная, она на 2: это 10 минут.',
+       'Минутная стрелка на числе 2, но это не 2 минуты. От числа до числа — 5 минут: 5, 10. Значит, 10 минут.']),
+  }], done) }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const times = [[6, 0], [12, 30], [1, 30]];
+    S.c13 = times.map(([h, mm], i) => {
+      const c = c13_clock(p, 300 + i * 500, 590, 165, { h, m: mm });
+      show(c.g, .2 + i * .15);
+      text(p, String(i + 1), 300 + i * 500, 815, .3 + i * .15, { size: 34, fill: COL.dim, anchor: 'middle', weight: 600 });
+      return c;
+    });
+  }, { ask: done => quiz({ x: 200, y: 40, w: 1200, cls: 'side' }, [{
+    id: 'c-pick', prompt: ['Щёлкни по часам, которые показывают 12 ч 30 мин.'],
+    build: pickEls(S.c13.map((c, i) => ({ box: [c.cx - 185, c.cy - 185, 370, 370], el: c.g, label: `Часы ${i + 1}` })), 1,
+      'Часовая стрелка прошла 12, а минутная на 6: 30 минут. Это 12 ч 30 мин.',
+      i => i === 0
+        ? 'Здесь длинная стрелка на 12, а короткая на 6 — это ровно 6 ч. Стрелки перепутаны.'
+        : 'Здесь часовая стрелка уже прошла 1 — это 1 ч 30 мин.'),
+  }], done) }],
+
+  ['later', 'Через 15 минут', (m) => {
+    const p = panel(0);
+    const T0 = [[4, 0], [4, 15], [4, 30], [4, 45], [5, 0]];
+    const labs = ['4 ч', '4 ч 15 мин', '4 ч 30 мин', '4 ч 45 мин', '5 ч'];
+    const marks = ['s0', 's1', 's2', 's3', 's4'];
+    const cs = T0.map(([h, mm], i) => {
+      const x = 200 + i * 300, prev = T0[Math.max(0, i - 1)];
+      const c = c13_clock(p, x, 380, 125, { h: prev[0], m: prev[1] });
+      show(c.g, m(marks[i]), .4);
+      if (i) {
+        const sec = c13_sector(c, prev[1], MC);
+        c13_go(c, h, mm, m(marks[i], .6), 1.4);
+        c13_grow(sec, prev[1], prev[1] + 15, m(marks[i], .6), 1.4);
+        text(p, '+15 мин', x - 150, 222, m(marks[i], .2), { size: 28, fill: MC, anchor: 'middle', weight: 700 });
+      }
+      text(p, labs[i], x, 560, m(marks[i], i ? 2 : .3), { size: 32, fill: COL.chalk, anchor: 'middle', weight: 700 });
+      return c;
+    });
+    pulse(cs[4].hh, m('hour', 1.5), 1.2);
+    text(p, 'Минутная стрелка прошла целый круг, а часовая — от 4 до 5.', 800, 670, m('hour'), { size: 32, fill: COL.dim, anchor: 'middle' });
+    mline(p, '4 ч + 1 ч = 5 ч', 800, 780, m('rule'), COL.chalk, 56);
+  }],
+
+  ['fast', 'Часы спешат', (m) => {
+    const p = panel(0);
+    const a = c13_clock(p, 300, 440, 220, { h: 7, m: 25 });
+    show(a.g, m('real'));
+    text(p, 'на самом деле', 300, 180, m('real'), { size: 32, fill: COL.dim, anchor: 'middle' });
+    text(p, '7 ч 25 мин', 300, 775, m('real', .3), { size: 40, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    const c = c13_clock(p, 820, 440, 220, { h: 7, m: 30 });
+    show(c.g, m('show'));
+    text(p, 'эти часы', 820, 180, m('show'), { size: 32, fill: COL.dim, anchor: 'middle' });
+    text(p, '7 ч 30 мин', 820, 775, m('show', .3), { size: 40, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    text(p, 'больше, чем на самом деле:', 1110, 260, m('ahead'), { size: 30, fill: COL.dim });
+    text(p, 'часы спешат', 1110, 320, m('ahead', .8), { size: 40, fill: MC, weight: 700 });
+    const gh = c13_ghost(c, 25); show(gh, m('gap'));
+    const sec = c13_sector(c, 25, MC, { op: .4 });
+    c13_grow(sec, 25, 30, m('gap', .5), 1);
+    const [lx, ly] = c13_pt(c.cx, c.cy, c.R * 1.13, 27.5);
+    text(p, '5 мин', lx, ly + 12, m('gap', 1.4), { size: 30, fill: MC, anchor: 'middle', weight: 700 });
+    mline(p, '30 − 25 = 5 (мин)', 1310, 480, m('calc'), COL.chalk, 46);
+    text(p, 'Спешат на 5 мин.', 1310, 590, m('ans'), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'на самом деле 7 ч 25 мин', 450, 160, .2, { size: 34, fill: COL.dim, anchor: 'middle' });
+    [[7, 45], [7, 55]].forEach(([h, mm], i) => {
+      const c = c13_clock(p, 250 + i * 400, 520, 170, { h, m: mm });
+      show(c.g, .3 + i * .2);
+      text(p, `часы ${i + 2}`, 250 + i * 400, 300, .3 + i * .2, { size: 32, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    });
+  }, { ask: done => quiz({ x: 880, y: 120, w: 680, cls: 'side' }, [{
+    id: 'c-fast', prompt: ['Какое время показывают часы и на сколько минут они спешат?'],
+    build: blanks([
+      { parts: ['Часы 2: 7 ч ', { box: '45' }, ' мин'], why: 'Минутная стрелка на 9: это 45 минут.', hint: 'Считай пятёрками до числа, на которое показывает длинная стрелка.' },
+      { parts: ['спешат на ', { box: '20' }, ' мин'], why: '45 − 25 = 20.', hint: 'Из 45 минут вычти 25 минут.' },
+      { parts: ['Часы 3: 7 ч ', { box: '55' }, ' мин'], why: 'Минутная стрелка на 11: это 55 минут.', hint: 'Считай пятёрками до числа, на которое показывает длинная стрелка.' },
+      { parts: ['спешат на ', { box: '30' }, ' мин'], why: '55 − 25 = 30.', hint: 'Из 55 минут вычти 25 минут.' },
+    ]),
+  }], done) }],
+
+  ['task', 'Задача про шахматы', (m) => {
+    const p = panel(0);
+    const a = c13_clock(p, 260, 440, 190, { h: 10, m: 0 });
+    show(a.g, m('g1'));
+    text(p, 'первая партия', 260, 200, m('g1'), { size: 32, fill: COL.rat, anchor: 'middle', weight: 700 });
+    const sa = c13_sector(a, 0, COL.rat, { op: .35 });
+    c13_go(a, 10, 30, m('g1', .8), 2); c13_grow(sa, 0, 30, m('g1', .8), 2);
+    text(p, '30 мин', 260, 690, m('g1', 2.6), { size: 40, fill: COL.rat, anchor: 'middle', weight: 700 });
+    const b = c13_clock(p, 720, 440, 190, { h: 11, m: 0 });
+    show(b.g, m('g2'));
+    text(p, 'вторая партия', 720, 200, m('g2'), { size: 32, fill: MC, anchor: 'middle', weight: 700 });
+    // the first game, as a dashed outline; its last 10 minutes are what the second game lacks
+    const out30 = path(b.under, c13_sectorD(b.cx, b.cy, b.R * .95, 0, 30), { stroke: COL.rat, 'stroke-width': 3, 'stroke-dasharray': '10 8' });
+    put(out30, { o: 0 }); show(out30, m('g2', .5));
+    const lack = path(b.under, c13_sectorD(b.cx, b.cy, b.R * .95, 20, 30), { fill: COL.bad, 'fill-opacity': .18 });
+    put(lack, { o: 0 }); show(lack, m('g2', 1.2));
+    const [lx, ly] = c13_pt(b.cx, b.cy, b.R * 1.12, 22);
+    text(p, '10 мин', lx + 8, ly + 10, m('g2', 1.4), { size: 28, fill: COL.bad, weight: 700 });
+    const q = text(p, '? мин', 720, 690, m('ask'), { size: 40, fill: MC, anchor: 'middle', weight: 700 });
+    pulse(q, m('ask', .5), 1.3);
+    c13_wrong(p, '30 + 10 = 40', 1240, 300, m('wrong'), m('wrong', 2), 46);
+    text(p, 'вторая партия короче', 1240, 360, m('wrong', 2), { size: 28, fill: COL.bad, anchor: 'middle' });
+    const sb = c13_sector(b, 0, MC, { op: .45 });
+    c13_go(b, 11, 20, m('calc'), 1.6); c13_grow(sb, 0, 20, m('calc'), 1.6);
+    mline(p, '30 − 10 = 20 (мин)', 1240, 480, m('calc', .5), COL.chalk, 48);
+    hide(q, m('ans'), .2);
+    const a20 = T(p, '20 мин', { x: 720, y: 690, size: 40, fill: MC, anchor: 'middle', weight: 700, o: 0 });
+    put(a20, { s: .4 }); pop(a20, m('ans', .2));
+    text(p, 'Ответ: 20 мин.', 1240, 590, m('ans'), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+    text(p, 'А обе партии вместе? — в конце главы', 1240, 760, m('more'), { size: 28, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Короткая стрелка — часовая, длинная — минутная.', 'w1', false],
+     ['1 ч = 60 мин', 'w2', true],
+     ['От числа до числа минутная стрелка идёт 5 мин.', 'w3', false],
+     ['Смотри сначала на часовую стрелку, потом на минутную.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-compare', prompt: ['Какой знак поставить: <, = или >? Помни: 1 ч = 60 мин.'],
+    build: grid([
+      { parts: ['53 мин  ○  35 мин'], ans: ['gt'], why: '53 больше 35.' },
+      { parts: ['45 мин  ○  4 ч 5 мин'], ans: ['lt'], why: '45 мин меньше даже одного часа, а здесь больше 4 часов.' },
+      { parts: ['1 ч  ○  100 мин'], ans: ['lt'], why: '1 ч = 60 мин, а 60 меньше 100.' },
+      { parts: ['1 ч  ○  60 мин'], ans: ['eq'], why: 'В одном часе ровно 60 минут.' },
+      { parts: ['1 ч 10 мин  ○  70 мин'], ans: ['eq'], why: '1 ч 10 мин = 60 мин + 10 мин = 70 мин.' },
+      { parts: ['1 ч  ○  50 мин'], ans: ['gt'], why: '1 ч = 60 мин, а 60 больше 50.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-chess', prompt: ['Первая партия в шахматы длилась 30 мин, а вторая — на 10 мин меньше. Сколько времени заняли обе партии?'],
+    build: choice([['50 мин'], ['20 мин'], ['40 мин']], 0,
+      '1) 30 − 10 = 20 (мин) — вторая партия. 2) 30 + 20 = 50 (мин) — обе партии.',
+      [null, '20 мин — это только вторая партия. Прибавь первую: 30 + 20 = 50 мин.',
+       'Здесь сложили 30 и 10. Но 10 мин — это не партия, а разница. Вторая партия длилась 30 − 10 = 20 мин, а обе — 30 + 20 = 50 мин.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

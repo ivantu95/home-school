@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Повторение: сложение и вычитание</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 19, title: 'Повторение: сложение и вычитание', minutes: 10, language: 'ru' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter (as in ch10–ch16): the whole — blue, the parts — pink and orange, a found answer — green,
+// a mistake — red. Brackets — blue, order numbers ①② — orange (as in ch15). Polyline links — orange, pink, violet (as in ch14).
+const WH = COL.whole, PA = COL.rat, PB = COL.task, OK = COL.good, CH = COL.chalk;
+const c19_cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+// A coloured line of math: items = [[str, colour], ...] centred on x (or starting at x). Shown at t0.
+function c19_line(p, items, x, y, t0, size = 56, anchor = 'middle') {
+  const g = G(p, { o: 0 });
+  const ws = items.map(([s]) => mathW([s], size)), w = ws.reduce((a, b) => a + b, 0);
+  let cx = anchor === 'middle' ? x - w / 2 : x;
+  items.forEach(([s, fill], i) => { M(g, [s], { x: cx, y, size, fill, anchor: 'start' }); cx += ws[i]; });
+  g._w = w;
+  show(g, t0);
+  return g;
+}
+// A label that is shown at t0 and (optionally) hidden at t1.
+function c19_lab(p, str, x, y, colr, t0, t1 = null, size = 38) {
+  const e = text(p, str, x, y, t0, { size, fill: colr, anchor: 'middle', weight: 700 });
+  if (t1 !== null) hide(e, t1, .3);
+  return e;
+}
+// A schematic drawing (схематический чертёж): segment x1–x2 split at xm; arcs over the parts (pink, orange), arc under the whole (blue).
+function c19_scheme(p, x1, xm, x2, y, t0) {
+  draw(path(p, `M${x1} ${y}H${x2}`, { stroke: CH, 'stroke-width': 5 }, { d: 0 }), t0, .6);
+  for (const x of [x1, xm, x2]) { const k = path(p, `M${x} ${y - 14}v28`, { stroke: CH, 'stroke-width': 4 }); put(k, { o: 0 }); show(k, t0 + .4, .3); }
+  const part = (xa, xb, colr, t) => {
+    draw(path(p, `M${xa + 3} ${y}H${xb - 3}`, { stroke: colr, 'stroke-width': 9 }, { d: 0 }), t, .5);
+    draw(path(p, `M${xa + 4} ${y - 12}Q${(xa + xb) / 2} ${y - 72} ${xb - 4} ${y - 12}`, { stroke: colr, 'stroke-width': 3 }, { d: 0 }), t, .5);
+  };
+  part(x1, xm, PA, t0 + .5); part(xm, x2, PB, t0 + .7);
+  draw(path(p, `M${x1 + 4} ${y + 12}Q${(x1 + x2) / 2} ${y + 92} ${x2 - 4} ${y + 12}`, { stroke: WH, 'stroke-width': 3 }, { d: 0 }), t0 + .9, .6);
+}
+// A row of math tokens (engine `tokens`), hidden; t0 (if not null) shows them. Brackets are blue.
+function c19_row(p, items, y, t0, { x = 800, size = 80 } = {}) {
+  const row = tokens(p, items.map(s => s === '(' || s === ')' ? { t: s, fill: WH } : s), { x, y, size, anchor: 'middle', o: 0 });
+  if (t0 !== null) row.forEach(e => show(e, t0, .4));
+  return row;
+}
+// A circled order number above token k of a row (as c15_mark).
+function c19_mark(p, row, k, n, t0, colr = PB) {
+  const tok = row[k], g = G(p, { x: tok._px, y: row.y - row.size * .95 - 28, o: 0, s: .4 });
+  mk('circle', { cx: 0, cy: 0, r: 25, fill: COL.board, stroke: colr, 'stroke-width': 3 }, g);
+  T(g, String(n), { x: 0, y: 10, size: 30, fill: colr, weight: 700, anchor: 'middle' });
+  pop(g, t0);
+  return { g, tok };
+}
+// One action: collapse tokens i..j into val; marks over the remaining tokens slide along, the used one fades (as c15_step).
+function c19_step(row, i, j, val, t0, marks = [], color = PB) {
+  const nr = collapse(row, i, j, [String(val)], t0, { color });
+  for (const k of marks) {
+    if (nr.includes(k.tok)) tw(k.g, { x: k.tok._px }, t0 + 1.3, .5);
+    else hide(k.g, t0 + .8, .35);
+  }
+  return nr;
+}
+// A chain of links (polyline) that can bend and straighten without changing link lengths (after c14_chain).
+const C19_LC = [PB, PA, COL.real];
+function c19_chain(p, lens, u, { side = [], size = 32 } = {}) {
+  const links = lens.map((L, i) => {
+    const g = G(p, { o: 0 });
+    g._line = path(g, `M0 0H${L * u}`, { stroke: C19_LC[i % 3], 'stroke-width': 8 }, { d: 0 });
+    return g;
+  });
+  const dots = lens.concat(0).map(() => { const d = mk('circle', { cx: 0, cy: 0, r: 8, fill: CH }, p); put(d, { o: 0, s: .4 }); return d; });
+  const labs = lens.map((L, i) => T(p, `${L} см`, { size, fill: C19_LC[i % 3], weight: 700, anchor: 'middle', o: 0 }));
+  return { lens, u, links, dots, labs, side, size };
+}
+function c19_pose(ch, x, y, angs, side = ch.side) {
+  let cx = x, cy = y;
+  put(ch.dots[0], { x: cx, y: cy });
+  ch.lens.forEach((L, i) => {
+    const a = angs[i] * Math.PI / 180, len = L * ch.u;
+    put(ch.links[i], { x: cx, y: cy, r: angs[i] });
+    const nx = cx + len * Math.cos(a), ny = cy + len * Math.sin(a);
+    let ox = Math.sin(a), oy = -Math.cos(a);
+    if (oy > 0) { ox = -ox; oy = -oy; }
+    const k = (side[i] ?? 1) * ch.size;
+    put(ch.labs[i], { x: (cx + nx) / 2 + ox * k * 1.8, y: (cy + ny) / 2 + oy * k + ch.size / 3 });
+    cx = nx; cy = ny;
+    put(ch.dots[i + 1], { x: cx, y: cy });
+  });
+}
+// Move the chain from pose a to pose b during [t0, t0 + dur]; nothing changes before t0.
+function c19_move(ch, a, b, t0, dur) {
+  const l = (u, v, q) => u + (v - u) * q;
+  const sa = a.side || ch.side, sb = b.side || ch.side;
+  prog(q => c19_pose(ch, l(a.x, b.x, q), l(a.y, b.y, q), a.angs.map((v, i) => l(v, b.angs[i], q)), sa.map((v, i) => l(v, sb[i] ?? 1, q))), t0, dur, io);
+}
+// Triangle with sides 2, 4, 5 cm as a closed chain A → C → B → A (A left, B right, AB = 5 cm at the bottom).
+const C19_U = 100;
+const C19_TRI = (() => {
+  const cx = (4 - 16 + 25) / 10, cy = -Math.sqrt(4 - cx * cx);   // C: |AC| = 2, |CB| = 4, |AB| = 5
+  const d = (dx, dy) => Math.atan2(dy, dx) * 180 / Math.PI;
+  return { x: 560, y: 470, angs: [d(cx, cy), d(5 - cx, -cy), -180], side: [1, 1, -1] };
+})();
+// Scales with flat pans (as on p. 50): items = [{ lab, colr, w, h, kg }] stand on the pans. Returns { L, R } arrays of item groups.
+function c19_scale(p, cx, y, L, R, t0) {
+  const g = G(p, { o: 0 });
+  path(g, `M${cx - 90} ${y + 105}H${cx + 90}L${cx + 60} ${y + 85}H${cx - 60}Z`, { fill: mix(COL.board, COL.dim, .25), stroke: COL.dim, 'stroke-width': 2.5 });
+  path(g, `M${cx} ${y + 85}V${y + 30}`, { stroke: COL.dim, 'stroke-width': 8 });
+  path(g, `M${cx - 250} ${y + 30}H${cx + 250}`, { stroke: COL.dim, 'stroke-width': 6 });
+  for (const s of [-1, 1]) {
+    path(g, `M${cx + s * 250} ${y + 30}V${y + 6}`, { stroke: COL.dim, 'stroke-width': 5 });
+    mk('rect', { x: cx + s * 250 - 150, y: y - 4, width: 300, height: 10, rx: 4, fill: COL.irr, 'fill-opacity': .5, stroke: COL.irr, 'stroke-width': 2 }, g);
+  }
+  const put_ = (list, px) => {
+    const tot = list.reduce((a, it) => a + it.w, 0) + (list.length - 1) * 10;
+    let x = px - tot / 2;
+    return list.map(it => {
+      const e = G(g), h = it.h || 60;
+      if (it.kg) {
+        path(e, `M${x + 8} ${y - 6}L${x + 16} ${y - 6 - h}H${x + it.w - 16}L${x + it.w - 8} ${y - 6}Z`, { fill: mix(COL.board, COL.dim, .35), stroke: COL.dim, 'stroke-width': 2.5 });
+        T(e, it.lab, { x: x + it.w / 2, y: y - 6 - h / 2 + 9, size: 24, fill: CH, weight: 700, anchor: 'middle' });
+      } else {
+        mk('rect', { x, y: y - 6 - h, width: it.w, height: h, rx: 22, fill: it.colr, 'fill-opacity': .3, stroke: it.colr, 'stroke-width': 3 }, e);
+        T(e, it.lab, { x: x + it.w / 2, y: y - 6 - h / 2 + 9, size: 26, fill: it.colr, weight: 700, anchor: 'middle' });
+      }
+      e._box = [x, y - 6 - h, it.w, h];
+      x += it.w + 10;
+      return e;
+    });
+  };
+  const out = { L: put_(L, cx - 250), R: put_(R, cx + 250), g };
+  show(g, t0);
+  return out;
+}
+const CAT = { lab: 'кот', colr: COL.int, w: 80, h: 80 }, BEAR = { lab: 'медведь', colr: COL.nat, w: 140, h: 120 }, RAB = { lab: 'кролик', colr: COL.real, w: 110, h: 95 };
+const KG = n => ({ lab: `${n} кг`, kg: true, w: 80, h: 60 });
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Повторение: сложение и вычитание', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 19', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Повторение:', { x: 800, y: 430, size: 80, weight: 600, anchor: 'middle' });
+    T(g, 'сложение и вычитание', { x: 800, y: 520, size: 80, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'вспомним всё, чему научились во втором разделе', 800, 640, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['parts', 'Целое и части', (m) => {
+    const p = panel(0);
+    const task = (str, t0, t1) => { const e = text(p, str, 800, 120, t0, { size: 32, anchor: 'middle' }); if (t1 !== null) hide(e, t1, .3); };
+    task('В мультфильме 9 серий. Коля посмотрел 2 серии. Сколько серий осталось?', .2, m('inv1'));
+    task('Из 9 серий Коля посмотрел несколько, осталось 7. Сколько серий он посмотрел?', m('inv1', .3), m('inv2'));
+    task('Коля посмотрел 2 серии, осталось 7. Сколько всего серий в мультфильме?', m('inv2', .3), null);
+    // 100 px = 1 серия: 7 | 2, whole 9
+    const x1 = 350, xm = 1050, x2 = 1250, y = 380;
+    c19_scheme(p, x1, xm, x2, y, m('sch'));
+    const A = [(x1 + xm) / 2, y - 58], B = [(xm + x2) / 2, y - 58], W = [(x1 + x2) / 2, y + 102];
+    // task 1: the remaining part is unknown
+    c19_lab(p, '?', ...A, PA, m('sch', 1.2), m('ansA', 1));
+    c19_lab(p, '7 серий', ...A, OK, m('ansA', 1.2), m('inv1'));
+    c19_lab(p, '2 серии', ...B, PB, m('sch', 1.2), m('inv1'));
+    c19_lab(p, '9 серий', ...W, WH, m('sch', 1.5), m('inv2'));
+    // task 2: the watched part is unknown
+    c19_lab(p, '7 серий', ...A, PA, m('inv1', .4), m('inv2'));
+    c19_lab(p, '?', ...B, PB, m('inv1', .4), m('ansB', 1));
+    c19_lab(p, '2 серии', ...B, OK, m('ansB', 1.2), m('inv2'));
+    // task 3: the whole is unknown
+    c19_lab(p, '7 серий', ...A, PA, m('inv2', .4));
+    c19_lab(p, '2 серии', ...B, PB, m('inv2', .4));
+    c19_lab(p, '?', ...W, WH, m('inv2', .4), m('ansC', 1));
+    c19_lab(p, '9 серий', ...W, OK, m('ansC', 1.2));
+    // the three solutions side by side
+    const eq = (items, x, note, t0) => { c19_line(p, items, x, 610, t0, 54); text(p, note, x, 660, t0 + .2, { size: 26, fill: COL.dim, anchor: 'middle' }); };
+    eq([['9', WH], [' − ', CH], ['2', PB], [' = ', CH], ['7', OK]], 400, 'сколько осталось?', m('ansA', 1.4));
+    eq([['9', WH], [' − ', CH], ['7', PA], [' = ', CH], ['2', OK]], 800, 'сколько посмотрел?', m('ansB', 1.4));
+    eq([['7', PA], [' + ', CH], ['2', PB], [' = ', CH], ['9', OK]], 1200, 'сколько всего?', m('ansC', 1.4));
+    const box = mk('rect', { x: 230, y: 720, width: 1140, height: 120, rx: 14, fill: 'none', stroke: COL.faint, 'stroke-width': 2.5 }, p);
+    put(box, { o: 0 }); show(box, m('rule'));
+    text(p, 'Ищем целое — складываем части.', 800, 768, m('rule', .2), { size: 34, fill: WH, anchor: 'middle', weight: 600 });
+    text(p, 'Ищем часть — из целого вычитаем другую часть.', 800, 818, m('rule', 1.2), { size: 34, fill: PB, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 80, 190, .2, { size: 28, fill: COL.dim });
+    c19_scheme(p, 80, 280, 420, 330, .3);
+    text(p, 'часть', 180, 275, .9, { size: 26, fill: PA, anchor: 'middle', weight: 600 });
+    text(p, 'часть', 350, 275, .9, { size: 26, fill: PB, anchor: 'middle', weight: 600 });
+    text(p, 'целое', 250, 425, 1.1, { size: 26, fill: WH, anchor: 'middle', weight: 600 });
+    text(p, 'целое = часть + часть', 80, 520, 1.3, { size: 28, fill: WH, weight: 600 });
+    text(p, 'часть = целое − часть', 80, 575, 1.4, { size: 28, fill: PB, weight: 600 });
+  }, { ask: done => quiz({ x: 440, y: 60, w: 1110, cls: 'side' }, [{
+    id: 'c-tasks', prompt: ['Реши задачи. Впиши ответы.'],
+    build: blanks([
+      { parts: ['Испекли 12 блинов, после обеда осталось 4. Съели ', { box: '8' }, ' блинов.'], why: 'Ищем часть: 12 − 4 = 8.', hint: '12 блинов — целое, 4 — часть. Ищем другую часть.' },
+      { parts: ['У Пети 10 тетрадей в линейку и 4 в клетку. Всего ', { box: '14' }, ' тетрадей.'], why: 'Ищем целое: 10 + 4 = 14.', hint: 'Обе части известны. Как найти целое?' },
+      { parts: ['Оля читала: утром 9 страниц, вечером 12. Вечером на ', { box: '3' }, ' больше.'], why: '«На сколько больше» — из большего вычитаем меньшее: 12 − 9 = 3.', hint: 'Чтобы узнать, на сколько одно число больше другого, из большего вычитают меньшее.' },
+      { parts: ['Через 6 лет Косте будет 13. Сейчас ему ', { box: '7' }, ', а 3 года назад было ', { box: '4' }, '.'], why: 'Сейчас: 13 − 6 = 7. Три года назад: 7 − 3 = 4.', hint: 'Сначала узнай, сколько лет Косте сейчас: 13 − 6.' },
+    ]),
+  }, {
+    id: 'c-trap', prompt: ['Продали 7 кг яблок, и осталось 9 кг. Сколько килограммов яблок было сначала?'],
+    build: choice([['16 кг'], ['2 кг'], ['9 кг']], 0,
+      'Было — это целое. Ищем целое — складываем части: 9 + 7 = 16 (кг).',
+      [null, 'Слово «осталось» не значит «вычитай». Было — это целое, а 7 кг и 9 кг — его части. Целое находим сложением: 9 + 7 = 16.',
+       '9 кг — это то, что осталось. А было больше: ещё 7 кг продали. 9 + 7 = 16 (кг).']),
+  }], done) }],
+
+  ['order', 'Порядок действий', (m) => {
+    const p = panel(0);
+    // 16 − 7 + 8: first the wrong order (from the right), then left to right
+    let row = c19_row(p, ['16', ' − ', '7', ' + ', '8'], 210, .2);
+    const w1 = c19_mark(p, row, 3, 1, m('wrong'), COL.bad), w2 = c19_mark(p, row, 1, 2, m('wrong', .3), COL.bad);
+    hide(w1.g, m('one'), .3); hide(w2.g, m('one'), .3);
+    const wr = G(p);
+    mline(wr, '7 + 8 = 15', 600, 330, m('w1'), COL.bad, 44);
+    mline(wr, '16 − 15 = 1', 1000, 330, m('w2'), COL.bad, 44);
+    c19_cross(wr, 470, 345, 1130, 305, m('x'));
+    tw(wr, { o: .45 }, m('one'), .5);
+    text(p, 'Без скобок — по порядку, слева направо.', 800, 420, m('one', .4), { size: 32, fill: PB, anchor: 'middle', weight: 600 });
+    const k1 = c19_mark(p, row, 1, 1, m('one', .6)), k2 = c19_mark(p, row, 3, 2, m('one', .9));
+    row = c19_step(row, 0, 2, 9, m('c1'), [k1, k2]);
+    row = c19_step(row, 0, 2, 17, m('c2'), [k2]);
+    const tA = m('c2', 2.2);
+    row.forEach(e => hide(e, tA, .3));
+    const recA = c19_row(p, ['16', ' − ', '7', ' + ', '8', ' = ', { t: '17', fill: OK }], 210, tA + .2);
+    c19_mark(p, recA, 1, 1, tA + .3); c19_mark(p, recA, 3, 2, tA + .4);
+    // 28 − (10 − 2): brackets first
+    let rb = c19_row(p, ['28', ' − ', '(', '10', ' − ', '2', ')'], 620, m('br'));
+    const b1 = c19_mark(p, rb, 4, 1, m('b1')), b2 = c19_mark(p, rb, 1, 2, m('b1', .4));
+    text(p, 'Действие в скобках — первым.', 800, 740, m('b1', .2), { size: 32, fill: WH, anchor: 'middle', weight: 600 });
+    rb = c19_step(rb, 2, 6, 8, m('b1', 1.4), [b1, b2]);
+    rb = c19_step(rb, 0, 2, 20, m('b2'), [b2]);
+    const tB = m('b2', 2.2);
+    rb.forEach(e => hide(e, tB, .3));
+    const recB = c19_row(p, ['28', ' − ', '(', '10', ' − ', '2', ')', ' = ', { t: '20', fill: OK }], 620, tB + .2);
+    c19_mark(p, recB, 4, 1, tB + .3); c19_mark(p, recB, 1, 2, tB + .4);
+  }],
+
+  ['props', 'Свойства сложения', (m) => {
+    const p = panel(0);
+    const y = 290, row = c19_row(p, ['7', ' + ', '8', ' + ', '3', ' + ', '2'], y, .2, { size: 90 });
+    const [a, b] = [row[2], row[4]], xa = a._px, xb = b._px;
+    // 8 jumps over, 3 dips under: they swap places
+    prog(q => { put(a, { x: xa + (xb - xa) * q, y: y - Math.sin(Math.PI * q) * 90 }); put(b, { x: xb + (xa - xb) * q, y: y + Math.sin(Math.PI * q) * 60 }); }, m('swap'), 1.2, io);
+    const arc = (x1, x2, t0) => {
+      draw(path(p, `M${x1} ${y + 30}Q${(x1 + x2) / 2} ${y + 110} ${x2} ${y + 30}`, { stroke: WH, 'stroke-width': 4 }, { d: 0 }), t0, .5);
+      text(p, '10', (x1 + x2) / 2, y + 130, t0 + .3, { size: 44, fill: WH, anchor: 'middle', weight: 700 });
+    };
+    arc(row[0]._px, xa, m('g1'));
+    arc(xb, row[6]._px, m('g2'));
+    c19_line(p, [['(', WH], ['7 + 3', CH], [')', WH], [' + ', CH], ['(', WH], ['8 + 2', CH], [')', WH], [' = 10 + 10 = ', CH], ['20', OK]], 800, 590, m('sum'), 62);
+    const box = mk('rect', { x: 330, y: 690, width: 940, height: 90, rx: 14, fill: 'none', stroke: COL.faint, 'stroke-width': 2.5 }, p);
+    put(box, { o: 0 }); show(box, m('rule'));
+    text(p, 'Складывать можно в любом порядке — как удобнее.', 800, 747, m('rule', .2), { size: 34, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 80, 190, .2, { size: 28, fill: COL.dim });
+    text(p, 'без скобок —', 80, 250, .3, { size: 28, fill: PB, weight: 600 });
+    text(p, 'слева направо', 80, 290, .3, { size: 28, fill: PB, weight: 600 });
+    text(p, 'скобки — первыми', 80, 360, .4, { size: 28, fill: WH, weight: 600 });
+    text(p, 'складывай,', 80, 430, .5, { size: 28, weight: 600 });
+    text(p, 'как удобнее', 80, 470, .5, { size: 28, weight: 600 });
+  }, { ask: done => quiz({ x: 420, y: 60, w: 1120, cls: 'side' }, [{
+    id: 'c-expr', prompt: ['Найди значения выражений.'],
+    build: blanks([
+      { parts: ['74 − (20 + 50) = ', { box: '4' }], why: 'Сначала скобки: 20 + 50 = 70. Потом 74 − 70 = 4.', hint: 'Сначала найди сумму в скобках.' },
+      { parts: ['60 − (40 − 10) = ', { box: '30' }], why: 'Сначала скобки: 40 − 10 = 30. Потом 60 − 30 = 30.', hint: 'Сначала найди разность в скобках.' },
+      { parts: ['13 − 8 + 7 = ', { box: '12' }], why: 'Слева направо: 13 − 8 = 5, 5 + 7 = 12.', hint: 'Скобок нет — считай слева направо: сначала 13 − 8.' },
+      { parts: ['36 − (20 + 10) = ', { box: '6' }], why: 'Сначала скобки: 20 + 10 = 30. Потом 36 − 30 = 6.', hint: 'Сначала найди сумму в скобках.' },
+      { parts: ['6 + 2 + 8 + 4 = ', { box: '20' }], why: '(6 + 4) + (2 + 8) = 10 + 10 = 20.', hint: 'Найди пары, которые дают 10: 6 и 4, 2 и 8.' },
+      { parts: ['18 + 11 + 2 + 9 = ', { box: '40' }], why: '(18 + 2) + (11 + 9) = 20 + 20 = 40.', hint: 'Сложи сначала 18 и 2, потом 11 и 9.' },
+    ]),
+  }, {
+    id: 'c-cmp', prompt: ['Сравни выражения: поставь знак <, = или >.'],
+    build: grid([
+      { parts: ['14 − 6  ○  12 − 5'], ans: ['gt'], why: '14 − 6 = 8, 12 − 5 = 7, а 8 > 7.' },
+      { parts: ['13 − 9  ○  14 − 9'], ans: ['lt'], why: 'Вычитаем одно и то же, а 13 меньше 14: 4 < 5.' },
+      { parts: ['11 + 10  ○  10 + 11'], ans: ['eq'], why: 'Слагаемые поменялись местами — сумма та же: 21 = 21.' },
+      { parts: ['16 − 7  ○  11 − 2'], ans: ['eq'], why: '16 − 7 = 9 и 11 − 2 = 9.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['measure', 'Периметр и длина ломаной', (m) => {
+    const p = panel(0);
+    const ch = c19_chain(p, [2, 4, 5], C19_U, { side: C19_TRI.side });
+    c19_pose(ch, C19_TRI.x, C19_TRI.y, C19_TRI.angs);
+    pop(ch.dots[0], .2);
+    ch.links.forEach((g, i) => { show(g, .2 + i * .4, .01); draw(g._line, .2 + i * .4, .4); pop(ch.dots[i + 1], .2 + (i + 1) * .4); });
+    ch.labs.forEach((e, i) => show(e, m('tri', 1.2 + i * .5)));
+    text(p, 'нарисовано мельче', 1500, 860, .4, { size: 22, fill: COL.faint, anchor: 'end' });
+    text(p, 'Периметр — сумма длин всех сторон.', 800, 110, m('per'), { size: 36, fill: WH, anchor: 'middle', weight: 600 });
+    pulse(ch.dots[0], m('cut'), 2);
+    const ZIG = { x: 300, y: 520, angs: [-35, 25, -15], side: [1, 1, 1] }, LINE = { x: 250, y: 630, angs: [0, 0, 0], side: [1, 1, 1] };
+    c19_move(ch, C19_TRI, ZIG, m('cut', .8), 1.4);
+    c19_move(ch, ZIG, LINE, m('roll'), 1.4);
+    const ru = uRuler(p, 250, 645, C19_U, 11, { mm: false });
+    show(ru.g, m('ruler'));
+    [1, 2, 3].forEach((k, i) => pulse(ch.dots[k], m('ruler', 1 + i * .8), 2));
+    uBracket(p, 250, 1350, 560, '11 см', WH, m('sum'), { up: true, size: 34 });
+    c19_line(p, [['2', PB], [' + ', CH], ['4', PA], [' + ', CH], ['5', COL.real], [' = ', CH], ['11', OK], [' (см)', CH]], 800, 810, m('sum', .3), 54);
+    text(p, 'Длина ломаной — сумма длин её звеньев.', 800, 165, m('rule'), { size: 32, fill: COL.dim, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 80, 190, .2, { size: 28, fill: COL.dim });
+    text(p, 'периметр —', 80, 250, .3, { size: 28, fill: WH, weight: 600 });
+    text(p, 'сумма длин сторон', 80, 290, .3, { size: 28, fill: WH, weight: 600 });
+    text(p, '1 ч = 60 мин', 80, 370, .4, { size: 30, weight: 600 });
+    text(p, '1 дм = 10 см', 80, 430, .5, { size: 30, weight: 600 });
+    text(p, '1 см = 10 мм', 80, 490, .6, { size: 30, weight: 600 });
+  }, { ask: done => quiz({ x: 420, y: 60, w: 1120, cls: 'side' }, [{
+    id: 'c-measure', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Звенья ломаной — 3 см, 2 см и 4 см. Её длина ', { box: '9' }, ' см.'], why: '3 + 2 + 4 = 9 (см).', hint: 'Сложи длины всех звеньев.' },
+      { parts: ['Стороны четырёхугольника — 4 см, 3 см, 4 см и 3 см. Периметр ', { box: '14' }, ' см.'], why: '4 + 3 + 4 + 3 = 14 (см).', hint: 'Сложи длины всех четырёх сторон: (4 + 3) + (4 + 3).' },
+      { parts: ['От ленты 10 м отрезали 2 м, потом ещё 5 м. Осталось ', { box: '3' }, ' м.'], why: '10 − 2 − 5 = 3 или 10 − (2 + 5) = 3 (м).', hint: 'Можно вычесть по очереди: 10 − 2, потом ещё 5.' },
+    ]),
+  }, {
+    id: 'c-time', prompt: ['Слава пообедал в 2 ч. Потом он 2 ч гулял, 1 ч делал уроки и 3 ч рисовал, а потом ужинал. В котором часу Слава ужинал?'],
+    build: blanks([{ parts: ['В ', { box: '8' }, ' ч'], why: '2 + 2 + 1 + 3 = 8. Слава ужинал в 8 ч.', hint: 'К 2 ч прибавь всё время после обеда: 2 + 1 + 3.' }]),
+  }, {
+    id: 'c-len', prompt: ['Сравни длины. Сначала переведи в одинаковые единицы.'],
+    build: grid([
+      { parts: ['20 см  ○  2 дм 5 см'], ans: ['lt'], why: '2 дм 5 см = 25 см, а 20 < 25.' },
+      { parts: ['45 см  ○  5 дм'], ans: ['lt'], why: '5 дм = 50 см, а 45 < 50.' },
+      { parts: ['54 мм  ○  5 см'], ans: ['gt'], why: '5 см = 50 мм, а 54 > 50.' },
+      { parts: ['80 мм  ○  8 см'], ans: ['eq'], why: '8 см = 80 мм.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['puzzle', 'Задача про весы', (m) => {
+    const p = panel(0);
+    text(p, 'Страничка для любознательных', 1520, 80, .2, { size: 28, fill: COL.dim, anchor: 'end' });
+    c19_scale(p, 470, 250, [KG(1), CAT], [KG(5)], .3);
+    text(p, 'кот + 1 кг = 5 кг', 960, 210, m('s1', 2), { size: 36, weight: 600 });
+    c19_line(p, [['кот = 5 − 1 = ', CH], ['4', OK], [' (кг)', CH]], 960, 280, m('cat', .5), 40, 'start');
+    const s2 = c19_scale(p, 470, 590, [BEAR], [RAB, CAT, KG(2)], m('s2'));
+    text(p, 'медведь = кролик + кот + 2 кг', 960, 550, m('s2', 2.5), { size: 34, weight: 600 });
+    // the cat and the 2 kg weight: what the bear has more than the rabbit
+    const [xc, yc] = s2.R[1]._box, [xk, , wk] = s2.R[2]._box;
+    const fr = mk('rect', { x: xc - 8, y: yc - 10, width: xk + wk - xc + 16, height: 590 - yc + 4, rx: 12, fill: 'none', stroke: PB, 'stroke-width': 3, 'stroke-dasharray': '10 7' }, p);
+    put(fr, { o: 0 }); show(fr, m('diff'), .4);
+    c19_line(p, [['4 + 2 = ', CH], ['6', OK], [' (кг)', CH]], 960, 620, m('six'), 40, 'start');
+    text(p, 'Кролик легче медведя на 6 кг.', 800, 790, m('ans'), { size: 40, fill: OK, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'кот — 4 кг', 80, 150, .2, { size: 30, fill: COL.int, weight: 600 });
+    text(p, 'кролик легче медведя на 6 кг', 80, 200, .3, { size: 30, fill: COL.dim, weight: 600 });
+    c19_scale(p, 470, 520, [CAT, BEAR], [RAB, KG('?')], .4);
+  }, { ask: done => quiz({ x: 1000, y: 60, w: 540, cls: 'side' }, [{
+    id: 'c-scale', prompt: ['Слева кот и медведь, справа кролик. Какую гирю поставить к кролику, чтобы весы были в равновесии?'],
+    build: blanks([{ parts: ['Гирю ', { box: '10' }, ' кг'],
+      why: 'Медведь тяжелее кролика на 6 кг, а ещё слева кот — 4 кг. 6 + 4 = 10 (кг).',
+      hint: 'Гиря должна заменить кота (4 кг) и то, на сколько медведь тяжелее кролика (6 кг).' }]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Целое находим сложением, а часть — вычитанием.', 'w1'],
+     ['Без скобок — слева направо; скобки — первыми.', 'w2'],
+     ['Складывать можно в любом порядке — как удобнее.', 'w3'],
+     ['Периметр — сумма длин всех сторон.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 36, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-missing', prompt: ['Найди пропущенные числа.'],
+    build: blanks([
+      { parts: ['20 + ', { box: '8' }, ' = 28'], why: 'Неизвестное слагаемое: 28 − 20 = 8.', hint: 'Из суммы вычти известное слагаемое.' },
+      { parts: [{ box: '74' }, ' − 4 = 70'], why: 'Неизвестное уменьшаемое: 70 + 4 = 74.', hint: 'Уменьшаемое — это целое: сложи разность и вычитаемое.' },
+      { parts: ['26 − ', { box: '6' }, ' = 20'], why: 'Неизвестное вычитаемое: 26 − 20 = 6.', hint: 'Из уменьшаемого вычти разность.' },
+      { parts: ['Машина прибавляет 9. На выходе 10. На входе было ', { box: '1' }], why: '? + 9 = 10, значит, на входе 10 − 9 = 1.', hint: 'Какое число вместе с 9 даёт 10?' },
+      { parts: ['Машина считает □ + (13 − 5). На вход дали 7. На выходе ', { box: '15' }], why: '13 − 5 = 8, а 7 + 8 = 15.', hint: 'Сначала скобки: 13 − 5. Потом прибавь к 7.' },
+      { parts: ['2, 5, 8, 11, 14, 17, ', { box: '20' }, ', ', { box: '23' }], why: 'Каждое следующее число на 3 больше: 17 + 3 = 20, 20 + 3 = 23.', hint: 'На сколько каждое число больше предыдущего?' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-zoo', prompt: ['В зоомагазине было 10 попугайчиков. Канареек — на 4 больше, чем попугайчиков, а черепах — на 6 меньше, чем канареек. Сколько было черепах?'],
+    build: choice([['8 черепах'], ['4 черепахи'], ['20 черепах']], 0,
+      'Сначала канарейки: 10 + 4 = 14. Черепах на 6 меньше, чем канареек: 14 − 6 = 8.',
+      [null, '10 − 6 = 4 — так черепах сравнили с попугайчиками. А их на 6 меньше, чем канареек. Сначала найди канареек: 10 + 4 = 14, потом 14 − 6 = 8.',
+       '«На 6 меньше» — значит, вычитаем, а не прибавляем. Канареек 10 + 4 = 14, черепах 14 − 6 = 8.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Порядок действий. Скобки</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 15, title: 'Порядок действий. Скобки', minutes: 9, language: 'ru', next: '../ch16/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: brackets (and the words that go into them) — COL.whole; order numbers ①② — COL.task;
+// a wrong order — COL.bad; the answer of a finished record — COL.good. Passengers: COL.whole, newcomers — COL.task.
+const BR = COL.whole, ORD = COL.task;
+// A row of math tokens, all hidden; t0 (if given) shows them. Brackets are coloured.
+// Items: strings or { t, fill }. Each token can then be collapsed (engine `collapse`).
+function c15_row(p, items, y, t0, { x = 800, size = 80, anchor = 'middle' } = {}) {
+  const row = tokens(p, items.map(s => s === '(' || s === ')' ? { t: s, fill: BR } : s), { x, y, size, anchor, o: 0 });
+  if (t0 !== null) row.forEach(e => show(e, t0, .4));
+  return row;
+}
+// A circled order number above token tok of row; returns { g, tok } for c15_step.
+function c15_mark(p, row, k, n, t0, colr = ORD) {
+  const tok = row[k], g = G(p, { x: tok._px, y: row.y - row.size * .95 - 28, o: 0, s: .4 });
+  mk('circle', { cx: 0, cy: 0, r: 25, fill: COL.board, stroke: colr, 'stroke-width': 3 }, g);
+  T(g, String(n), { x: 0, y: 10, size: 30, fill: colr, weight: 700, anchor: 'middle' });
+  pop(g, t0);
+  return { g, tok };
+}
+// One action: collapse tokens i..j into val; order marks over the remaining tokens slide along, the used one fades.
+function c15_step(row, i, j, val, t0, marks = [], color = ORD, fill = COL.chalk) {
+  const nr = collapse(row, i, j, [String(val)], t0, { color, fill });
+  for (const mk of marks) {
+    if (nr.includes(mk.tok)) tw(mk.g, { x: mk.tok._px }, t0 + 1.3, .5);
+    else hide(mk.g, t0 + .8, .35);
+  }
+  return nr;
+}
+// Replace a label's text at t0 (deterministic for seeking) with a small pulse.
+function c15_swap(e, str, t0) {
+  const old = e.textContent;
+  prog(q => { e.textContent = q < 1 ? old : str; }, t0, .01, lin);
+  pulse(e, t0, 1.2);
+}
+const c15_cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+// A bus with n passengers (dots). Returns the dots; dot i sits at x = 400 + 56 i.
+const c15_px = i => 400 + i * 56;
+function c15_bus(p, n, t0) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x: 340, y: 365, width: 920, height: 140, rx: 34, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.dim, 'stroke-width': 3 }, g);
+  path(g, 'M1212 380V490', { stroke: COL.faint, 'stroke-width': 3, 'stroke-dasharray': '8 6' });
+  for (const cx of [470, 1130]) mk('circle', { cx, cy: 512, r: 26, fill: COL.board, stroke: COL.dim, 'stroke-width': 4 }, g);
+  show(g, t0);
+  return Array.from({ length: n }, (_, i) => {
+    const d = mk('circle', { cx: 0, cy: 0, r: 19, fill: COL.whole, 'fill-opacity': .85 }, p);
+    put(d, { x: c15_px(i), y: 432, o: 0, s: .4 }); pop(d, t0 + .3 + i * .04);
+    return d;
+  });
+}
+// Passengers leave through the door on the right.
+const c15_leave = (dots, t0) => dots.forEach((d, k) => { tw(d, { x: 1420 + k * 20, y: 560 }, t0 + k * .12, .9, io); hide(d, t0 + .5 + k * .12, .5); });
+// A framed rule line.
+function c15_rule(p, str, y, t0, colr = BR, w = 900) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x: 800 - w / 2, y: y - 46, width: w, height: 70, rx: 14, fill: colr, 'fill-opacity': .1, stroke: colr, 'stroke-width': 3 }, g);
+  T(g, str, { x: 800, y: y + 2, size: 36, fill: COL.chalk, weight: 600, anchor: 'middle' });
+  show(g, t0);
+  return g;
+}
+// A left-to-right arrow under a record.
+function c15_arrow(p, x1, x2, y, t0, colr = ORD) {
+  draw(path(p, `M${x1} ${y}H${x2}M${x2 - 16} ${y - 10}L${x2} ${y}L${x2 - 16} ${y + 10}`, { stroke: colr, 'stroke-width': 4 }, { d: 0 }), t0, .7);
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Порядок действий. Скобки', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 15', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Порядок действий. Скобки', { x: 800, y: 440, size: 84, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'какое действие выполнять первым', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['ltr', 'Слева направо', (m) => {
+    const p = panel(0);
+    let row = c15_row(p, ['15', ' − ', '5', ' + ', '3'], 250, .2);
+    const dots = c15_bus(p, 15, m('bus'));
+    const lab = text(p, 'было 15', 800, 610, m('bus', .8), { size: 32, fill: COL.whole, anchor: 'middle', weight: 600 });
+    c15_leave(dots.slice(10), m('out'));
+    const nw = [0, 1, 2].map(k => {
+      const d = mk('circle', { cx: 0, cy: 0, r: 19, fill: COL.task }, p);
+      put(d, { x: 1440 + k * 40, y: 560, o: 0 });
+      tw(d, { o: 1 }, m('in', k * .15), .3);
+      tw(d, { x: c15_px(10 + k), y: 432 }, m('in', k * .15), .9, io);
+      return d;
+    });
+    void nw;
+    const mk1 = c15_mark(p, row, 1, 1, m('one'));
+    const mk2 = c15_mark(p, row, 3, 2, m('two'));
+    row = c15_step(row, 0, 2, 10, m('c1'), [mk1, mk2]);
+    row = c15_step(row, 0, 2, 13, m('c2'), [mk2]);
+    c15_swap(lab, 'стало 13', m('c2', 1));
+    // the finished record replaces the collapsed row
+    hide(row[0], m('rule'), .3);
+    const rec = c15_row(p, ['15', ' − ', '5', ' + ', '3', ' = ', { t: '13', fill: COL.good }], 250, m('rule', .3));
+    c15_mark(p, rec, 1, 1, m('rule', .5)); c15_mark(p, rec, 3, 2, m('rule', .7));
+    c15_arrow(p, rec[0]._px - 40, rec[4]._px + 40, 290, m('rule', .9));
+    c15_rule(p, 'Без скобок — по порядку, слева направо', 760, m('rule', .4), ORD);
+  }],
+
+  ['wrong', 'С конца нельзя', (m) => {
+    const p = panel(0);
+    let row = c15_row(p, ['15', ' − ', '5', ' + ', '3'], 250, .2);
+    const k1 = c15_mark(p, row, 3, 1, m('w1', -.3), COL.bad);
+    const k2 = c15_mark(p, row, 1, 2, m('w1', -.1), COL.bad);
+    row = c15_step(row, 2, 4, 8, m('w1', .4), [k1, k2], COL.bad);
+    row = c15_step(row, 0, 2, 7, m('w2', .4), [k2], COL.bad, COL.bad);
+    c15_cross(p, 760, 275, 840, 190, m('x', .3));
+    text(p, 'не 13!', 900, 240, m('x', .6), { size: 36, fill: COL.bad, weight: 700 });
+    const rec = c15_row(p, ['15', ' − ', '5', ' + ', '3', ' = ', { t: '13', fill: COL.good }], 560, m('ok'));
+    c15_mark(p, rec, 1, 1, m('ok', .4)); c15_mark(p, rec, 3, 2, m('ok', .7));
+    c15_arrow(p, rec[0]._px - 40, rec[4]._px + 40, 600, m('ok', 1));
+    text(p, 'слева направо', 800, 660, m('ok', 1.4), { size: 30, fill: ORD, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', (m) => {
+    const p = panel(0);
+    text(p, 'Скобок нет — считаем по порядку, слева направо', 800, 140, .2, { size: 34, anchor: 'middle', weight: 600 });
+    c15_arrow(p, 420, 1180, 190, .4);
+  }, { ask: done => quiz({ x: 200, y: 250, w: 1200, cls: 'side' }, [{
+    id: 'c-ltr', prompt: ['Вычисли. Скобок нет — действия по порядку, слева направо.'],
+    build: blanks([
+      { parts: ['11 − 4 − 6 = ', { box: '1' }], why: '11 − 4 = 7, потом 7 − 6 = 1.', hint: 'Сначала 11 − 4, потом из результата вычти 6.' },
+      { parts: ['7 + 9 − 8 = ', { box: '8' }], why: '7 + 9 = 16, потом 16 − 8 = 8.', hint: 'Сначала 7 + 9, потом вычти 8.' },
+      { parts: ['13 − 9 + 7 = ', { box: '11' }], why: '13 − 9 = 4, потом 4 + 7 = 11.', hint: 'Сначала 13 − 9. Не складывай 9 и 7 — так считать с конца.' },
+      { parts: ['16 − 7 + 7 = ', { box: '16' }], why: '16 − 7 = 9, потом 9 + 7 = 16: отняли 7 и вернули 7.', hint: 'Сначала 16 − 7, потом прибавь 7.' },
+    ]),
+  }], done) }],
+
+  ['brackets', 'Скобки', (m) => {
+    const p = panel(0);
+    let row = c15_row(p, ['15', ' − ', '(', '5', ' + ', '3', ')'], 250, null);
+    const dots = c15_bus(p, 15, m('bus', -.2));
+    const lab = text(p, 'было 15', 800, 610, m('bus', .8), { size: 32, fill: COL.whole, anchor: 'middle', weight: 600 });
+    c15_leave(dots.slice(10), m('out1'));
+    c15_leave(dots.slice(7, 10), m('out2'));
+    [3, 4, 5].forEach(k => show(row[k], m('sum', .2), .4));
+    [0, 1].forEach(k => show(row[k], m('minus', .2), .4));
+    [2, 6].forEach(k => { put(row[k], { s: .4 }); pop(row[k], m('br', .2)); });
+    const k1 = c15_mark(p, row, 4, 1, m('one'));
+    const k2 = c15_mark(p, row, 1, 2, m('one', .6));
+    row = c15_step(row, 2, 6, 8, m('c1'), [k1, k2]);
+    row = c15_step(row, 0, 2, 7, m('c2'), [k2]);
+    c15_swap(lab, 'осталось 7', m('c2', 1));
+    hide(row[0], m('rule'), .3);
+    const rec = c15_row(p, ['15', ' − ', '(', '5', ' + ', '3', ')', ' = ', { t: '7', fill: COL.good }], 250, m('rule', .3));
+    c15_mark(p, rec, 4, 1, m('rule', .5)); c15_mark(p, rec, 1, 2, m('rule', .7));
+    c15_rule(p, 'Действия в скобках выполняют первыми', 760, m('rule', .4));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    S.c15q = c15_row(p, ['14', ' − ', '(', '6', ' − ', '2', ')'], 220, .2, { size: 90 });
+  }, { ask: done => quiz({ x: 200, y: 310, w: 1200, cls: 'side' }, [{
+    id: 'c-first', prompt: ['Какое действие выполняют первым? Щёлкни по знаку.'],
+    build: tapEls(S.c15q, [1, 4], 4,
+      'Первым выполняют действие в скобках: 6 − 2 = 4. Потом 14 − 4 = 10.',
+      () => 'Этот минус стоит левее, но в примере есть скобки. Первым выполняют действие в скобках.'),
+  }, {
+    id: 'c-brackets', prompt: ['Вычисли. Первым — действие в скобках.'],
+    build: blanks([
+      { parts: ['14 − (6 − 2) = ', { box: '10' }], why: '6 − 2 = 4, потом 14 − 4 = 10.', hint: 'Сначала 6 − 2, потом вычти результат из 14.' },
+      { parts: ['8 − (2 + 3) = ', { box: '3' }], why: '2 + 3 = 5, потом 8 − 5 = 3.', hint: 'Сначала сложи 2 и 3, потом вычти сумму из 8.' },
+      { parts: ['(8 − 2) + 3 = ', { box: '9' }], why: '8 − 2 = 6, потом 6 + 3 = 9.', hint: 'Здесь в скобках 8 − 2. Это первое действие.' },
+    ]),
+  }], done) }],
+
+  ['fix', 'Скобки меняют ответ', (m) => {
+    const p = panel(0);
+    const a = c15_row(p, ['15', ' − ', '5', ' + ', '3', ' = ', { t: '13', fill: COL.good }], 140, .2, { size: 56 });
+    const b = c15_row(p, ['15', ' − ', '(', '5', ' + ', '3', ')', ' = ', { t: '7', fill: COL.good }], 230, .5, { size: 56 });
+    pulse(a[6], m('pair', 1.8), 1.4); pulse(b[8], m('pair', 2.4), 1.4);
+    pulse(b[2], m('pair', 4), 1.4); pulse(b[6], m('pair', 4), 1.4);
+    draw(path(p, 'M150 300H1450', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('task', -.3), .6);
+    const A = c15_row(p, ['4', ' − ', '1', ' + ', '2', ' = ', '1'], 480, m('task', .5));
+    const tr = mline(p, '4 − 1 = 3,   3 + 2 = 5', 800, 620, m('try'), COL.bad, 46);
+    const ne = text(p, '5 ≠ 1', 800, 700, m('try', 3.2), { size: 40, fill: COL.bad, anchor: 'middle', weight: 700 });
+    hide(tr, m('br'), .3); hide(ne, m('br'), .3);
+    // the same row again, now with brackets: tokens slide apart, brackets pop in
+    let B = c15_row(p, ['4', ' − ', '(', '1', ' + ', '2', ')', ' = ', '1'], 480, null);
+    const map = { 0: 0, 1: 1, 3: 2, 4: 3, 5: 4, 7: 5, 8: 6 };
+    for (const [kb, ka] of Object.entries(map)) {
+      const e = B[kb];
+      put(e, { x: A[ka]._px });
+      tw(e, { o: 1 }, m('br'), .05);
+      tw(e, { x: e._px }, m('br', .1), .6);
+      tw(A[ka], { o: 0 }, m('br'), .05);
+    }
+    [2, 6].forEach(k => { put(B[k], { s: .4 }); pop(B[k], m('br', .6)); });
+    const k1 = c15_mark(p, B, 4, 1, m('c1', -.6));
+    const k2 = c15_mark(p, B, 1, 2, m('c1', -.3));
+    B = c15_step(B, 2, 6, 3, m('c1'), [k1, k2]);
+    B = c15_step(B, 0, 2, 1, m('c2'), [k2]);
+    [0, 1, 2].forEach(k => hide(B[k], m('ok'), .3));
+    const rec = c15_row(p, ['4', ' − ', '(', '1', ' + ', '2', ')', ' = ', { t: '1', fill: COL.good }], 480, m('ok', .3));
+    text(p, '✓', rec[8]._px + 60, 480, m('ok', .8), { size: 64, fill: COL.good, weight: 700 });
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    c15_rule(p, 'Действия в скобках выполняют первыми', 140, .2);
+  }, { ask: done => quiz({ x: 200, y: 220, w: 1200, cls: 'side' }, [{
+    id: 'c-place1', prompt: ['Где поставить скобки, чтобы равенство стало верным?   ', $m('8 − 5 + 1 = 2')],
+    build: choice([[$m('8 − (5 + 1) = 2')], [$m('(8 − 5) + 1 = 2')], ['Скобки не нужны']], 0,
+      '5 + 1 = 6, потом 8 − 6 = 2.',
+      [null, 'Проверь: 8 − 5 = 3, 3 + 1 = 4, а не 2. Такие скобки ничего не меняют — это и так первое действие.',
+       'Без скобок: 8 − 5 = 3, 3 + 1 = 4. Не 2 — значит, скобки нужны.']),
+  }, {
+    id: 'c-place2', prompt: ['А здесь?   ', $m('6 − 3 − 2 = 5')],
+    build: choice([[$m('(6 − 3) − 2 = 5')], [$m('6 − (3 − 2) = 5')], ['Скобки не нужны']], 1,
+      '3 − 2 = 1, потом 6 − 1 = 5.',
+      ['Проверь: 6 − 3 = 3, 3 − 2 = 1, а не 5.',
+       null, 'Без скобок: 6 − 3 = 3, 3 − 2 = 1. Не 5 — значит, скобки нужны.']),
+  }], done) }],
+
+  ['words', 'Пример по словам', (m) => {
+    const p = panel(0);
+    text(p, 'Из числа 10 вычесть ', 800, 140, .2, { size: 36, anchor: 'end' });
+    text(p, 'сумму чисел 6 и 3', 800, 140, m('s1', 1.5), { size: 36, fill: BR, weight: 600 });
+    let r1 = c15_row(p, ['10', ' − ', '(', '6', ' + ', '3', ')'], 300, null, { size: 76 });
+    [3, 4, 5].forEach(k => show(r1[k], m('sum', 1.5), .4));
+    [2, 6].forEach(k => { put(r1[k], { s: .4 }); pop(r1[k], m('br')); });
+    [0, 1].forEach(k => show(r1[k], m('minus', .8), .4));
+    const a1 = c15_mark(p, r1, 4, 1, m('c1', -.2));
+    const a2 = c15_mark(p, r1, 1, 2, m('c1', .1));
+    r1 = c15_step(r1, 2, 6, 9, m('c1', 1.2), [a1, a2]);
+    r1 = c15_step(r1, 0, 2, 1, m('c2', .3), [a2]);
+    hide(r1[0], m('s2', -.3), .3);
+    c15_row(p, ['10', ' − ', '(', '6', ' + ', '3', ')', ' = ', { t: '1', fill: COL.good }], 300, m('s2'), { size: 76 });
+    draw(path(p, 'M150 380H1450', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('s2'), .6);
+    text(p, 'К числу 9 прибавить ', 800, 480, m('nine', -.2), { size: 36, anchor: 'end' });
+    text(p, 'разность чисел 8 и 5', 800, 480, m('d'), { size: 36, fill: BR, weight: 600 });
+    let r2 = c15_row(p, ['9', ' + ', '(', '8', ' − ', '5', ')'], 640, null, { size: 76 });
+    [0, 1].forEach(k => show(r2[k], m('nine', .6), .4));
+    [3, 4, 5].forEach(k => show(r2[k], m('d', .8), .4));
+    [2, 6].forEach(k => { put(r2[k], { s: .4 }); pop(r2[k], m('d', 3.2)); });
+    const b1 = c15_mark(p, r2, 4, 1, m('c3', -.3));
+    const b2 = c15_mark(p, r2, 1, 2, m('c3', 0));
+    r2 = c15_step(r2, 2, 6, 3, m('c3', .6), [b1, b2]);
+    r2 = c15_step(r2, 0, 2, 12, m('c4', .3), [b2]);
+    hide(r2[0], m('c4', 2.6), .3);
+    c15_row(p, ['9', ' + ', '(', '8', ' − ', '5', ')', ' = ', { t: '12', fill: COL.good }], 640, m('c4', 2.8), { size: 76 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'сумма чисел — ', 800, 130, .2, { size: 34, anchor: 'end' });
+    mline(p, '( … + … )', 810, 130, .2, BR, 40, 'start');
+    text(p, 'разность чисел — ', 800, 195, .3, { size: 34, anchor: 'end' });
+    mline(p, '( … − … )', 810, 195, .3, BR, 40, 'start');
+  }, { ask: done => quiz({ x: 200, y: 250, w: 1200, cls: 'side' }, [{
+    id: 'c-words', prompt: ['Запиши пример по словам и вычисли.'],
+    build: blanks([
+      { parts: ['К числу 6 прибавить разность чисел 14 и 5:   6 + (', { box: '14' }, ' − ', { box: '5' }, ') = ', { box: '15' }],
+        why: 'Разность 14 и 5 — это 14 − 5 = 9. Потом 6 + 9 = 15.', hint: 'Разность чисел 14 и 5 — это 14 − 5. Сначала вычисли её, потом прибавь к 6.' },
+      { parts: ['Из числа 18 вычесть сумму чисел 2 и 6:   18 − (', { box: '2' }, ' + ', { box: '6' }, ') = ', { box: '10' }],
+        test: ([a, b, c]) => ((a === 2 && b === 6) || (a === 6 && b === 2)) && c === 10,
+        why: 'Сумма 2 и 6 — это 2 + 6 = 8. Потом 18 − 8 = 10.', hint: 'В скобках — сумма чисел 2 и 6. Сначала сложи их, потом вычти сумму из 18.' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Скобок нет — по порядку, слева направо.', 'w1', false],
+     ['Действия в скобках выполняют первыми.', 'w2', false],
+     ['15 − 5 + 3 = 13,    15 − (5 + 3) = 7', 'w3', true],
+     ['Сумму или разность целиком берут в скобки.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-order', prompt: ['Вычисли. Помни, какое действие выполнять первым.'],
+    build: blanks([
+      { parts: ['14 − 8 + 3 = ', { box: '9' }], why: 'Скобок нет: 14 − 8 = 6, потом 6 + 3 = 9.', hint: 'Скобок нет — слева направо: сначала 14 − 8.' },
+      { parts: ['12 − 5 + 7 = ', { box: '14' }], why: '12 − 5 = 7, потом 7 + 7 = 14.', hint: 'Сначала 12 − 5. Не складывай 5 и 7 — это счёт с конца.' },
+      { parts: ['8 + 9 − 10 = ', { box: '7' }], why: '8 + 9 = 17, потом 17 − 10 = 7.', hint: 'Сначала 8 + 9, потом вычти 10.' },
+      { parts: ['6 + (3 + 1) = ', { box: '10' }], why: '3 + 1 = 4, потом 6 + 4 = 10.', hint: 'Сначала действие в скобках: 3 + 1.' },
+      { parts: ['4 + (6 − 3) = ', { box: '7' }], why: '6 − 3 = 3, потом 4 + 3 = 7.', hint: 'Сначала действие в скобках: 6 − 3.' },
+      { parts: ['89 − (50 + 30) = ', { box: '9' }], why: '50 + 30 = 80, потом 89 − 80 = 9.', hint: 'Сначала сложи десятки в скобках: 50 + 30.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-apples', prompt: ['В вазе было 12 яблок. Петя съел 3 яблока, а Маша — 5. Сколько яблок осталось? Выбери запись решения.'],
+    build: choice([[$m('12 − (3 + 5) = 4')], [$m('12 − 3 + 5 = 14')], [$m('12 + (3 + 5) = 20')]], 0,
+      'Петя и Маша вместе съели 3 + 5 = 8 яблок. Эту сумму вычитаем из 12: 12 − 8 = 4 яблока.',
+      [null, 'Здесь после 12 − 3 яблоки прибавляются: + 5. А Маша яблоки съела, а не принесла. Сумму съеденных берут в скобки: 12 − (3 + 5).',
+       'Яблоки съели — значит, их стало меньше, а не больше. Нужно вычитать, а не прибавлять.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>
