@@ -24,15 +24,22 @@ async def run(base, ch):
         for k in asks:
             await pg.evaluate(f"seek({k}, true)"); await pg.evaluate("hideCover()")
             await pg.wait_for_timeout(int((await pg.evaluate(f"P.end")) * 1000) + 600)
-            kind = await pg.evaluate("document.querySelector('#ui .box') ? 'blanks' : document.querySelector('#ui .grid') ? 'grid' : 'choice'")
+            kind = await pg.evaluate("document.querySelector('#ui .box') ? 'blanks' : document.querySelector('#ui .grid') ? 'grid' : document.querySelector('#ui .opt') ? 'choice' : document.querySelector('#scene .hit') ? 'pick' : 'other'")
             if kind == "blanks":
                 for bx in await pg.query_selector_all("#ui input.box"): await bx.fill("7")
                 await pg.keyboard.press("Enter")
             elif kind == "grid":
                 await pg.keyboard.press("Enter")   # nothing chosen = wrong
                 btn = await pg.query_selector("#ui button.btn:has-text('Проверить')"); await btn.click()
-            else:
+            elif kind == "choice":
                 opts = await pg.query_selector_all("#ui .opt"); await opts[-1].click()
+            elif kind == "pick":
+                n_hits = await pg.evaluate("document.querySelectorAll('#scene .hit').length")
+                # try each target until one is graded wrong (the right one is unknown here)
+                for j in range(n_hits):
+                    await pg.evaluate(f"document.querySelectorAll('#scene .hit')[{j}].dispatchEvent(new MouseEvent('click', {{bubbles: true}}))")
+                    await pg.wait_for_timeout(150)
+                    if "Не совсем" in (await pg.inner_text("#ui .fb")): break
             fb = (await pg.inner_text("#ui .fb")).strip()[:60]
             await pg.keyboard.press("Escape"); await pg.keyboard.press("s"); await pg.wait_for_timeout(200)
             fb2 = (await pg.inner_text("#ui .fb")).strip()[:70]

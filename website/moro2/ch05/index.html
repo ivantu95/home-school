@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сотня</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 5, title: 'Сотня', minutes: 8, language: 'ru', next: '../ch06/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours: a ten is blue (COL.whole), a unit orange (COL.task), the hundred — green (COL.good).
+const C05_HUN = COL.good;
+// Where stick i of a bundle sits relative to the bundle centre (matches uBundle).
+const C05_DX = i => -36 + i * 8;
+// A hundred: ten blue bundles packed tightly and tied with a green rope. Centred on x, top at y. Starts hidden.
+function c05_hundred(p, x, y, H = 150, gap = 26) {
+  const g = G(p, { o: 0 });
+  for (let i = 0; i < 10; i++) put(uBundle(g, x + (i - 4.5) * gap, y, COL.whole, H), { o: 1 });
+  const w = 4.5 * gap + 58;
+  path(g, `M${x - w} ${y + H / 2}H${x + w}`, { stroke: COL.board, 'stroke-width': 13 });
+  path(g, `M${x - w} ${y + H / 2}H${x + w}`, { stroke: C05_HUN, 'stroke-width': 6 });
+  return g;
+}
+// The number 100 with the hundreds digit green, the tens digit blue and the units digit orange (centred on x).
+function c05_n100(p, x, y, t0, size = 110) {
+  const g = G(p, { o: 0 });
+  const d = size * .56;
+  [['1', C05_HUN], ['0', COL.whole], ['0', COL.task]].forEach(([s, f], i) => T(g, s, { x: x + (i - 1) * d, y, size, fill: f, font: MATH, weight: 600, anchor: 'middle' }));
+  show(g, t0);
+  return g;
+}
+// A hop on the number line from x1 to x2 (above the line when up), with an arrowhead and a small label.
+function c05_hop(p, x1, x2, y, up, colr, label, t0) {
+  const h = up ? -70 : 70;
+  draw(path(p, `M${x1} ${y}Q${(x1 + x2) / 2} ${y + h} ${x2} ${y}`, { stroke: colr, 'stroke-width': 4 }, { d: 0 }), t0, .5);
+  const tx = x2 - (x1 + x2) / 2, ty = -h, L = Math.hypot(tx, ty), ux = tx / L, uy = ty / L;   // tangent at the end
+  const wing = a => `${(x2 - 16 * (ux * Math.cos(a) - uy * Math.sin(a))).toFixed(1)} ${(y - 16 * (ux * Math.sin(a) + uy * Math.cos(a))).toFixed(1)}`;
+  const head = path(p, `M${wing(.5)}L${x2} ${y}L${wing(-.5)}`, { stroke: colr, 'stroke-width': 4 });
+  put(head, { o: 0 }); show(head, t0 + .45, .2);
+  text(p, label, (x1 + x2) / 2, y + (up ? -50 : 72), t0 + .3, { size: 30, fill: colr, anchor: 'middle', weight: 700 });
+}
+// "left ? right": a comparison whose sign is chosen later. Returns the "?".
+const c05_cmp = (p, l, r, y, t0) => {
+  mline(p, l, 730, y, t0, COL.chalk, 60, 'end');
+  mline(p, r, 870, y, t0, COL.chalk, 60, 'start');
+  const q = T(p, '?', { x: 800, y, size: 60, fill: COL.task, anchor: 'middle', weight: 700, o: 0 });
+  show(q, t0);
+  return q;
+};
+const c05_sign = (p, q, sign, y, t0) => {
+  hide(q, t0, .2);
+  const s = T(p, sign, { x: 800, y, size: 64, fill: COL.good, anchor: 'middle', weight: 700, o: 0 });
+  put(s, { s: .4 }); pop(s, t0 + .2);
+  return s;
+};
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Сотня', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 1 · Глава 5', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Сотня', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'десять десятков — одна сотня', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['ninetynine', '99 и ещё 1', (m) => {
+    const p = panel(0);
+    const H = 150, y = 230, bx = 170 + 9 * 105;
+    for (let i = 0; i < 9; i++) show(uBundle(p, 170 + i * 105, y, COL.whole, H), .2 + i * .08, .4);
+    const sticks = [];
+    for (let i = 0; i < 10; i++) {
+      const s = uStick(p, 1090 + i * 30, y, COL.task, H);
+      if (i < 9) show(s, m('ones', .1 + i * .08), .3);
+      else { put(s, { y: y - 50 }); tw(s, { o: 1, y }, m('add'), .5, out); pulse(s, m('add', .5), 1.1); }
+      sticks.push(s);
+    }
+    uCounter(p, 800, 165, '99', m('n99'), [[m('n100'), '100']], { size: 100 });
+    hide(text(p, '9 дес. 9 ед.', 800, 460, m('n99', .3), { size: 34, fill: COL.dim, anchor: 'middle' }), m('ten'), .3);
+    const box = mk('rect', { x: 1070, y: y - 18, width: 310, height: H + 36, rx: 14, fill: 'none', stroke: COL.task, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+    put(box, { o: 0 }); show(box, m('ten'), .3); hide(box, m('tie', .2), .3);
+    hide(text(p, '10 ед.', 1225, y + H + 55, m('ten', .2), { size: 32, fill: COL.task, anchor: 'middle', weight: 700 }), m('tie', .2), .3);
+    sticks.forEach((s, i) => tw(s, { x: bx + C05_DX(i) }, m('tie', .3), .9, io));
+    show(uRope(p, bx, y + H / 2), m('tie', 1.3), .4);
+    sticks.forEach(s => tw(s, { c_fill: COL.whole }, m('tie', 1.5), .6));
+    text(p, 'новый десяток', bx, y + H + 55, m('tie', 1.8), { size: 28, fill: COL.whole, anchor: 'middle', weight: 600 });
+    mline(p, '99 + 1 = 100', 800, 600, m('n100'), C05_HUN, 64);
+    mline(p, '10 дес. = 100', 800, 710, m('tens'), COL.whole, 56);
+  }],
+
+  ['tie', 'Десять десятков', (m) => {
+    const p = panel(0);
+    const H = 150, y = 150, xs = i => 327.5 + i * 105;
+    const bs = [];
+    for (let i = 0; i < 10; i++) {
+      const b = uBundle(p, xs(i), y, COL.whole, H); show(b, .2 + i * .05, .4); bs.push(b);
+      const n = T(p, String((i + 1) * 10), { x: xs(i), y: 350, size: 36, fill: COL.chalk, font: MATH, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, m('t' + (i + 1))); hide(n, m('tie'), .3);
+      pulse(b, m('t' + (i + 1)), 1.06);
+    }
+    bs.forEach((b, i) => tw(b, { x: 800 + (i - 4.5) * 26 }, m('tie', .2), 1, io));
+    const w = 4.5 * 26 + 58;
+    const r0 = path(p, `M${800 - w} ${y + H / 2}H${800 + w}`, { stroke: COL.board, 'stroke-width': 13 }); put(r0, { o: 0 }); show(r0, m('tie', 1.2), .2);
+    draw(path(p, `M${800 - w} ${y + H / 2}H${800 + w}`, { stroke: C05_HUN, 'stroke-width': 6 }, { d: 0 }), m('tie', 1.2), .6);
+    text(p, '1 сотня', 800, 360, m('name'), { size: 44, fill: C05_HUN, anchor: 'middle', weight: 700 });
+    mline(p, '10 ед. = 1 дес.', 800, 510, m('r1'), COL.chalk, 54);
+    mline(p, '10 дес. = 1 сот.', 800, 610, m('r2'), COL.chalk, 54);
+    mline(p, '1 сот. = 100 ед.', 800, 710, m('r3'), C05_HUN, 54);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const y = 80, H = 110;
+    [200, 300].forEach(x => show(uBundle(p, x, y, COL.whole, H), .2, .4));
+    [370, 400, 430, 460].forEach(x => show(uStick(p, x, y, COL.task, H), .2, .4));
+    [680, 780, 880].forEach(x => show(uBundle(p, x, y, COL.whole, H), .3, .4));
+    show(uStick(p, 950, y, COL.task, H), .3, .4);
+    show(c05_hundred(p, 1300, y, H, 22), .4, .4);
+    [['1', 330], ['2', 815], ['3', 1300]].forEach(([s, x]) => text(p, s, x, 240, .4, { size: 30, fill: COL.dim, anchor: 'middle', weight: 700 }));
+  }, { ask: done => quiz({ x: 200, y: 280, w: 1200, cls: 'side' }, [{
+    id: 'c-sticks', prompt: ['Сколько палочек на каждом рисунке? Сколько в этих числах десятков и единиц?'],
+    build: blanks([
+      { parts: ['Рисунок 1: ', { box: '2' }, ' дес. ', { box: '4' }, ' ед. — это ', { box: '24' }], why: 'Два пучка — 20, и 4 палочки: 24.', hint: 'Пучок — это десяток. Отдельные палочки — единицы.' },
+      { parts: ['Рисунок 2: ', { box: '3' }, ' дес. ', { box: '1' }, ' ед. — это ', { box: '31' }], why: 'Три пучка — 30, и одна палочка: 31.', hint: 'Посчитай пучки десятками: 10, 20, 30. И добавь одну палочку.' },
+      { parts: ['Рисунок 3: ', { box: '10' }, ' дес. — это ', { box: '100' }], why: 'В сотне 10 пучков-десятков: 10, 20, … 100.', hint: 'Большая связка — это сотня. Сколько в ней десятков?' },
+      { parts: ['1 сот. = ', { box: '100' }, ' ед.'], why: 'В одной сотне 10 десятков, то есть 100 единиц.', hint: 'Сколько палочек в большой связке?' },
+    ]),
+  }], done) }],
+
+  ['three', 'Один, десять, сто', (m) => {
+    const p = panel(0);
+    const xs = [330, 800, 1270];
+    text(p, 'однозначное', xs[0], 110, m('c1'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    text(p, 'двузначное', xs[1], 110, m('c2'), { size: 28, fill: COL.dim, anchor: 'middle' });
+    text(p, 'трёхзначное', xs[2], 110, m('c3'), { size: 28, fill: C05_HUN, anchor: 'middle', weight: 600 });
+    const one = T(p, '1', { x: xs[0], y: 240, size: 110, fill: COL.task, font: MATH, weight: 600, anchor: 'middle', o: 0 }); show(one, .3);
+    uNum(p, 10, xs[1], 240, .3, 110);
+    const h = c05_n100(p, xs[2], 240, .3, 110);
+    pulse(one, m('c1', .3), 1.2);
+    pulse(h.children[0], m('c3', 1.5), 1.25);
+    show(uStick(p, xs[0], 300, COL.task, 120), m('c1', .4), .4);
+    show(uBundle(p, xs[1], 300, COL.whole, 120), m('c2', .4), .4);
+    show(c05_hundred(p, xs[2], 300, 120, 22), m('c3', .4), .4);
+    text(p, '1 единица', xs[0], 480, m('c1', .8), { size: 34, fill: COL.task, anchor: 'middle', weight: 700 });
+    text(p, '1 десяток', xs[1], 480, m('c2', .8), { size: 34, fill: COL.whole, anchor: 'middle', weight: 700 });
+    text(p, '1 сотня', xs[2], 480, m('c3', 1.5), { size: 34, fill: C05_HUN, anchor: 'middle', weight: 700 });
+    // the "1" of 10 sits in the tens place
+    const ring = mk('rect', { x: xs[1] - 70, y: 150, width: 72, height: 110, rx: 16, fill: 'none', stroke: COL.whole, 'stroke-width': 3 }, p);
+    put(ring, { o: 0 }); show(ring, m('c2', 1.2), .3);
+    const g0 = G(p, { o: 0 });
+    T(g0, '1 сот.', { x: xs[2] - 120, y: 560, size: 30, fill: C05_HUN, weight: 700, anchor: 'middle' });
+    T(g0, '0 дес.', { x: xs[2], y: 560, size: 30, fill: COL.whole, weight: 700, anchor: 'middle' });
+    T(g0, '0 ед.', { x: xs[2] + 115, y: 560, size: 30, fill: COL.task, weight: 700, anchor: 'middle' });
+    show(g0, m('zeros'), .4);
+    pulse(h.children[1], m('zeros', .3), 1.2); pulse(h.children[2], m('zeros', .6), 1.2);
+    text(p, '100 — наименьшее трёхзначное число', 800, 720, m('rule'), { size: 46, fill: C05_HUN, anchor: 'middle', weight: 700 });
+    draw(path(p, 'M370 748H1230', { stroke: C05_HUN, 'stroke-width': 3 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    c05_n100(p, 800, 200, .2, 140);
+  }, { ask: done => quiz({ x: 300, y: 280, w: 1000, cls: 'side' }, [{
+    id: 'c-digit1', prompt: ['Что обозначает цифра 1 в записи числа 100?'],
+    build: choice([['1 сотню'], ['1 десяток'], ['1 единицу']], 0,
+      'В числе 100 три цифры. Первая цифра показывает сотни: 1 сотня — это 100 единиц.',
+      [null, 'Десяток цифра 1 обозначает в числе 10. А в числе 100 она стоит на третьем месте справа — там сотни.',
+       'Единицу цифра 1 обозначает в числе 1. А в числе 100 цифр три, и первая из них — сотни.']),
+  }, {
+    id: 'c-tens100', prompt: ['Сколько всего десятков в числе 100?'],
+    build: choice([['10'], ['0'], ['1']], 0,
+      'Сотня — это 10 десятков, связанных вместе: 10, 20, … 100.',
+      [null, 'Ноль стоит на месте десятков, потому что все десятки собраны в сотню. А всего в ней 10 десятков.',
+       'Один — это сотня. А десятков в сотне 10.']),
+  }], done) }],
+
+  ['neighbors', 'Соседи числа', (m) => {
+    const p = panel(0);
+    const U = 120, x0 = 200, y = 400, X = v => x0 + (v - 90) * U;
+    draw(path(p, `M${x0 - 40} ${y}H${X(100) + 60}`, { stroke: COL.chalk, 'stroke-width': 3 }, { d: 0 }), .2, .6);
+    for (let v = 90; v <= 100; v++) {
+      const tk = path(p, `M${X(v)} ${y - 14}v28`, { stroke: COL.chalk, 'stroke-width': 3 }); put(tk, { o: 0 }); show(tk, .4 + (v - 90) * .05);
+      text(p, String(v), X(v), y + 60, .4 + (v - 90) * .05, { size: 34, fill: v === 100 ? C05_HUN : COL.chalk, anchor: 'middle', weight: v === 100 ? 700 : 500 });
+    }
+    let d = '';
+    for (let v = 90; v < 99; v++) d += `M${X(v) + 6} ${y - 4}Q${X(v) + U / 2} ${y - 50} ${X(v + 1) - 6} ${y - 4}`;
+    draw(path(p, d, { stroke: COL.faint, 'stroke-width': 3 }, { d: 0 }), m('step'), 1.2);
+    text(p, '+1', X(90) + U / 2, y - 50, m('step', .3), { size: 26, fill: COL.dim, anchor: 'middle', weight: 700 });
+    const c99 = mk('circle', { cx: X(99), cy: y, r: 12, fill: COL.task }, p); put(c99, { o: 0 }); show(c99, m('p99'), .3);
+    c05_hop(p, X(100), X(99), y + 90, false, COL.task, '−1', m('p99', .3));
+    mline(p, '100 − 1 = 99', 230, 640, m('p99', .8), COL.task, 48, 'start');
+    text(p, '99 — предшествующее числу 100', 720, 636, m('p99', 1.2), { size: 32, fill: COL.chalk });
+    const c100 = mk('circle', { cx: X(100), cy: y, r: 12, fill: C05_HUN }, p); put(c100, { o: 0 }); show(c100, m('n100'), .3);
+    c05_hop(p, X(99), X(100), y - 4, true, C05_HUN, '+1', m('n100', .3));
+    mline(p, '99 + 1 = 100', 230, 730, m('n100', .8), C05_HUN, 48, 'start');
+    text(p, '100 — последующее числу 99', 720, 726, m('n100', 1.2), { size: 32, fill: COL.chalk });
+    text(p, 'сосед слева: − 1        сосед справа: + 1', 800, 830, m('more'), { size: 32, fill: COL.dim, anchor: 'middle', weight: 600 });
+    text(p, 'Соседи числа', 800, 150, .2, { size: 36, anchor: 'middle', weight: 600 });
+  }],
+
+  ['compare', 'Что больше?', (m) => {
+    const p = panel(0);
+    const q = c05_cmp(p, '99', '100', 130, .3);
+    mline(p, '99 > 100', 1310, 110, m('wrong'), COL.bad, 46);
+    text(p, 'ведь 9 > 1?', 1310, 160, m('wrong', .4), { size: 28, fill: COL.bad, anchor: 'middle' });
+    draw(path(p, 'M1220 140L1400 70', { stroke: COL.bad, 'stroke-width': 6 }, { d: 0 }), m('wrong', 2.5), .4);
+    const H = 90, y1 = 230, y2 = 380;
+    text(p, '99', 190, y1 + 62, m('sticks'), { size: 40, fill: COL.chalk, anchor: 'end', weight: 700 });
+    for (let i = 0; i < 9; i++) show(uBundle(p, 270 + i * 95, y1, COL.whole, H), m('sticks', .2 + i * .06), .3);
+    for (let i = 0; i < 9; i++) show(uStick(p, 1110 + i * 24, y1, COL.task, H), m('sticks', 1 + i * .06), .3);
+    text(p, '9 дес. 9 ед.', 1500, y1 + 62, m('sticks', 1.6), { size: 28, fill: COL.dim, anchor: 'end' });
+    text(p, '100', 190, y2 + 62, m('hund'), { size: 40, fill: C05_HUN, anchor: 'end', weight: 700 });
+    const row2 = [];
+    for (let i = 0; i < 10; i++) { const b = uBundle(p, 270 + i * 95, y2, COL.whole, H); show(b, m('hund', .2 + i * .06), .3); row2.push(b); }
+    text(p, '10 дес.', 1500, y2 + 62, m('hund', 1), { size: 28, fill: COL.dim, anchor: 'end' });
+    const diff = mk('rect', { x: 270 + 9 * 95 - 58, y: y2 - 14, width: 116, height: H + 28, rx: 12, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(diff, { o: 0 }); show(diff, m('ans'), .3);
+    c05_sign(p, q, '<', 130, m('ans'));
+    pulse(row2[9], m('ans', .4), 1.1);
+    text(p, 'Трёхзначное число больше любого двузначного.', 800, 640, m('rule'), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+    mline(p, '99 < 100', 800, 750, m('rule', .6), COL.chalk, 56);
+  }],
+
+  ['q3', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 220, y: 60, w: 1160, cls: 'side' }, [{
+    id: 'c-compare', prompt: ['Какой знак поставить: <, = или >?'],
+    build: grid([
+      { parts: ['99  ○  100'], ans: ['lt'], why: '100 — трёхзначное число, оно больше любого двузначного.' },
+      { parts: ['100  ○  98'], ans: ['gt'], why: '98 стоит перед 100 на числовом луче, значит, 100 больше.' },
+      { parts: ['10 дес.  ○  100'], ans: ['eq'], why: '10 десятков — это одна сотня, то есть 100.' },
+      { parts: ['9 дес. 9 ед.  ○  1 сот.'], ans: ['lt'], why: '9 дес. 9 ед. — это 99, а 1 сот. — это 100. 99 меньше 100.' },
+      { parts: ['9 мм  ○  1 см'], ans: ['lt'], why: '1 см = 10 мм, а 9 мм меньше 10 мм.' },
+      { parts: ['1 дм  ○  10 мм'], ans: ['gt'], why: '1 дм = 10 см = 100 мм, а это больше, чем 10 мм.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['10 дес. = 1 сот.', 'w1', true],
+     ['1 сот. = 100 ед.', 'w2', true],
+     ['99 + 1 = 100', 'w3', true],
+     ['100 — наименьшее трёхзначное число.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-hundred', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Число, предшествующее числу 100: ', { box: '99' }], why: 'Предшествующее число на 1 меньше: 100 − 1 = 99.', hint: 'Какое число стоит прямо перед 100? Отними 1.' },
+      { parts: ['Число, последующее числу 79: ', { box: '80' }], why: 'Последующее число на 1 больше: 79 + 1 = 80.', hint: 'Прибавь к 79 одну единицу: девять единиц и ещё одна — новый десяток.' },
+      { parts: ['84 = ', { box: '8' }, ' дес. ', { box: '4' }, ' ед.'], why: 'Первая цифра 8 — десятки, вторая 4 — единицы.', hint: 'Первая цифра показывает десятки, вторая — единицы.' },
+      { parts: ['10 дес. = ', { box: '100' }], why: 'Десять десятков — одна сотня, это 100.', hint: 'Считай десятками: 10, 20, … — что после 90?' },
+      { parts: ['1 сот. − 1 дес. = ', { box: '90' }], why: '1 сот. = 10 дес. Убрали один десяток — осталось 9 дес., это 90.', hint: 'В сотне 10 десятков. Сколько останется, если убрать один?' },
+      { parts: ['Числа 84, 48, 88, 44 записаны всего ', { box: '2' }, ' разными цифрами.'], why: 'Во всех этих числах только цифры 8 и 4.', hint: 'Выпиши, какие цифры встречаются в этих числах.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-order', prompt: ['Расставь числа в порядке уменьшения — от самого большого к самому маленькому: 57, 100, 15, 89, 60.'],
+    build: choice([['100, 89, 60, 57, 15'], ['15, 57, 60, 89, 100'], ['89, 60, 57, 15, 100']], 0,
+      'Самое большое — 100: это трёхзначное число. Дальше сравниваем десятки: 89, 60, 57, 15.',
+      [null, 'Здесь числа идут от меньшего к большему — это порядок увеличения. А нужно наоборот: начать со 100.',
+       '100 начинается с цифры 1, но оно не маленькое: у него три цифры. Сто больше любого двузначного числа, поэтому оно первое.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

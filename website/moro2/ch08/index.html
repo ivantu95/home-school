@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Рубль. Копейка</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 8, title: 'Рубль. Копейка', minutes: 9, language: 'ru', next: '../ch09/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// "left ? right": a comparison whose sign is chosen later. Returns the "?" so it can be replaced.
+const cmpLine = (p, l, r, y, t0, size = 48) => {
+  mline(p, l, 730, y, t0, COL.chalk, size, 'end');
+  mline(p, r, 870, y, t0, COL.chalk, size, 'start');
+  const q = T(p, '?', { x: 800, y, size, fill: COL.task, anchor: 'middle', weight: 700, o: 0 });
+  show(q, t0);
+  return q;
+};
+const setSign = (p, q, sign, y, t0) => {
+  hide(q, t0, .2);
+  const s = T(p, sign, { x: 800, y, size: 54, fill: COL.good, anchor: 'middle', weight: 700, o: 0 });
+  put(s, { s: .4 }); pop(s, t0 + .2);
+  return s;
+};
+// Money colours: kopecks orange (like ones), roubles blue (the bigger unit), as everywhere in the book.
+const c08_col = unit => unit === 'р.' ? COL.whole : COL.task;
+// A coin of value v ('к.' or 'р.') centred on (x, y). A plain circle with its value, not a picture of a real coin. Starts hidden.
+function c08_coin(p, v, unit, x, y, r = 50) {
+  const colr = c08_col(unit), g = G(p, { x, y, o: 0 });
+  mk('circle', { cx: 0, cy: 0, r, fill: colr, 'fill-opacity': .22, stroke: colr, 'stroke-width': Math.max(2, r / 16) }, g);
+  if (r >= 20) mk('circle', { cx: 0, cy: 0, r: r * .82, fill: 'none', stroke: colr, 'stroke-width': 1.5, 'stroke-opacity': .55 }, g);
+  if (r >= 18) {
+    const two = String(v).length > 1;
+    T(g, String(v), { x: 0, y: r * (two ? .16 : .2), size: r * (two ? .74 : .86), fill: colr, font: MATH, weight: 700, anchor: 'middle' });
+    T(g, unit, { x: 0, y: r * .62, size: r * .36, fill: colr, weight: 600, anchor: 'middle' });
+  }
+  return g;
+}
+// A banknote of v roubles centred on (x, y): a rectangle with its value. Starts hidden.
+function c08_note(p, v, x, y, w = 250, h = 130) {
+  const colr = COL.whole, g = G(p, { x, y, o: 0 });
+  mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 10, fill: colr, 'fill-opacity': .18, stroke: colr, 'stroke-width': 3 }, g);
+  mk('rect', { x: -w / 2 + 10, y: -h / 2 + 10, width: w - 20, height: h - 20, rx: 6, fill: 'none', stroke: colr, 'stroke-width': 1.5, 'stroke-opacity': .5 }, g);
+  mk('circle', { cx: w / 2 - 50, cy: 0, r: 30, fill: 'none', stroke: colr, 'stroke-width': 2, 'stroke-opacity': .6 }, g);
+  T(g, String(v), { x: -w / 2 + 28, y: 14, size: 56, fill: colr, font: MATH, weight: 700 });
+  T(g, 'рублей', { x: -w / 2 + 28, y: 46, size: 22, fill: colr, weight: 600 });
+  return g;
+}
+// A purse centred on (x, y): rounded body with a clasp. Starts hidden.
+function c08_purse(p, x, y, w, h) {
+  const g = G(p, { x, y, o: 0 });
+  mk('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 46, fill: COL.chalk, 'fill-opacity': .05, stroke: COL.dim, 'stroke-width': 3.5 }, g);
+  path(g, `M${-w / 2 + 40} ${-h / 2}Q0 ${-h / 2 - 34} ${w / 2 - 40} ${-h / 2}`, { stroke: COL.dim, 'stroke-width': 3.5 });
+  mk('circle', { cx: -11, cy: -h / 2 - 22, r: 10, fill: 'none', stroke: COL.dim, 'stroke-width': 3 }, g);
+  mk('circle', { cx: 11, cy: -h / 2 - 22, r: 10, fill: 'none', stroke: COL.dim, 'stroke-width': 3 }, g);
+  return g;
+}
+// Coins in a row inside a group, centred on cx: vals = [[v, unit], ...].
+const c08_row = (g, vals, cx, y, r, gap) => vals.map(([v, u], i) => put(c08_coin(g, v, u, cx + (i - (vals.length - 1) / 2) * gap, y, r), { o: 1 }));
+const cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Рубль. Копейка', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 1 · Глава 8', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Рубль. Копейка', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'сколько копеек в рубле', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['coins', 'Монеты и купюры', (m) => {
+    const p = panel(0);
+    text(p, 'копейки', 120, 190, .2, { size: 36, fill: COL.task, weight: 700 });
+    text(p, 'рубли', 120, 450, .4, { size: 36, fill: COL.whole, weight: 700 });
+    [1, 5, 10, 50].forEach((v, i) => { const c = c08_coin(p, v, 'к.', 190 + i * 170, 290, 66); put(c, { s: .4 }); pop(c, .3 + i * .15); });
+    [1, 2, 5, 10].forEach((v, i) => { const c = c08_coin(p, v, 'р.', 190 + i * 170, 560, 66); put(c, { s: .4 }); pop(c, m('rub', .4 + i * .3)); });
+    text(p, 'монеты', 445, 680, m('rub', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    [50, 100].forEach((v, i) => { const n = c08_note(p, v, 1010 + i * 290, 560); put(n, { s: .4 }); pop(n, m('note', i * .4)); });
+    text(p, 'купюры', 1155, 680, m('note', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    mline(p, '1 р. — рубль', 1000, 250, m('short'), COL.whole, 48, 'start');
+    mline(p, '1 к. — копейка', 1000, 330, m('short', 1.6), COL.task, 48, 'start');
+  }],
+
+  ['rub100', 'Сколько копеек в рубле', (m) => {
+    const p = panel(0);
+    // a postage stamp with a zigzag edge
+    const st = G(p, { o: 0 });
+    let d = 'M110 230';
+    for (let i = 0; i < 8; i++) d += `l10 -8l10 8`;
+    for (let i = 0; i < 10; i++) d += `l8 10l-8 10`;
+    for (let i = 0; i < 8; i++) d += `l-10 8l-10 -8`;
+    for (let i = 0; i < 10; i++) d += `l-8 -10l8 -10`;
+    path(st, d, { stroke: COL.chalk, 'stroke-width': 2.5, fill: COL.chalk, 'fill-opacity': .06 });
+    mk('rect', { x: 130, y: 250, width: 120, height: 160, rx: 4, fill: 'none', stroke: COL.dim, 'stroke-width': 2 }, st);
+    T(st, 'марка', { x: 190, y: 470, size: 28, fill: COL.dim, anchor: 'middle' });
+    show(st, .2);
+    const price = uCounter(p, 190, 352, '?', .3, [[m('sum', .4), '100 к.']], { size: 40, fill: COL.task });
+    void price;
+    const c1 = c08_coin(p, 50, 'к.', 430, 330, 80), c2 = c08_coin(p, 50, 'к.', 650, 330, 80);
+    put(c1, { s: .4 }); pop(c1, m('c1')); put(c2, { s: .4 }); pop(c2, m('c2'));
+    text(p, '+', 540, 350, m('c2'), { size: 56, anchor: 'middle', weight: 600 });
+    mline(p, '= 100 к.', 760, 352, m('sum'), COL.task, 64, 'start');
+    text(p, '=', 1080, 352, m('rub'), { size: 64, anchor: 'middle', weight: 600 });
+    const r1 = c08_coin(p, 1, 'р.', 1210, 330, 80); put(r1, { s: .4 }); pop(r1, m('rub', .3));
+    mline(p, '1 р. = 100 к.', 800, 640, m('rule'), COL.chalk, 80);
+    draw(path(p, 'M540 668H1060', { stroke: COL.whole, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['same', 'Рубль одинаковыми монетами', (m) => {
+    const p = panel(0);
+    const lab = (s, y, t0) => text(p, s, 80, y, t0, { size: 30, fill: COL.dim });
+    lab('2 монеты по 50 к.', 125, m('r50'));
+    [0, 1].forEach(i => { const c = c08_coin(p, 50, 'к.', 560 + i * 110, 115, 48); put(c, { s: .4 }); pop(c, m('r50', .2 + i * .3)); });
+    lab('10 монет по 10 к.', 270, m('r10'));
+    const tt = [m('t1'), m('t2')];
+    for (let i = 2; i < 9; i++) tt.push(m('t2') + (m('t10') - m('t2')) * (i - 1) / 8);
+    tt.push(m('t10'));
+    for (let i = 0; i < 10; i++) {
+      const c = c08_coin(p, 10, 'к.', 560 + i * 90, 260, 38); put(c, { s: .4 }); pop(c, m('r10', .1 + i * .08));
+      const n = T(p, String((i + 1) * 10), { x: 560 + i * 90, y: 330, size: 26, fill: COL.task, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, tt[i]);
+    }
+    lab('20 монет по 5 к.', 430, m('r5'));
+    for (let i = 0; i < 20; i++) { const c = c08_coin(p, 5, 'к.', 560 + (i % 10) * 64, 395 + Math.floor(i / 10) * 64, 27); put(c, { s: .4 }); pop(c, m('r5', .1 + i * .04)); }
+    lab('100 монет по 1 к.', 640, m('r1'));
+    for (let i = 0; i < 100; i++) { const c = c08_coin(p, 1, 'к.', 560 + (i % 20) * 30, 560 + Math.floor(i / 20) * 30, 12); put(c, { s: .4 }); pop(c, m('r1', .1 + i * .012)); }
+    draw(path(p, 'M1430 80h16V730h-16M1446 405h18', { stroke: COL.whole, 'stroke-width': 4 }, { d: 0 }), m('same'), .6);
+    text(p, '1 р.', 1474, 420, m('same', .4), { size: 44, fill: COL.whole, weight: 700 });
+    text(p, 'В каждом ряду — 100 к.', 800, 820, m('same', .8), { size: 34, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    [0, 1].forEach(i => show(c08_coin(p, 50, 'к.', 590 + i * 110, 160, 46), .2));
+    text(p, '=', 800, 178, .3, { size: 52, anchor: 'middle' });
+    show(c08_coin(p, 1, 'р.', 900, 160, 46), .4);
+  }, { ask: done => quiz({ x: 330, y: 260, w: 940, cls: 'side' }, [{
+    id: 'c-rub', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['1 р. = ', { box: '100' }, ' к.'], why: 'В одном рубле сто копеек.', hint: 'Две монеты по 50 к. — это сколько копеек?' },
+      { parts: ['1 р. = 50 к. + ', { box: '50' }, ' к.'], why: '50 к. + 50 к. = 100 к. = 1 р.', hint: 'В рубле 100 к. Сколько не хватает до 100?' },
+      { parts: ['1 р. = 10 к. + 10 к. + … — всего ', { box: '10' }, ' монет'], why: 'Десять раз по 10 к.: 10, 20, … 100.', hint: 'Считай десятками до ста: 10, 20, 30, …' },
+      { parts: ['1 р. = 5 к. + 5 к. + … — всего ', { box: '20' }, ' монет'], why: 'Две монеты по 5 к. — это 10 к., а в рубле десять раз по 10 к.: всего 20 монет.', hint: 'Две монеты по 5 к. — это 10 к. А сколько раз по 10 к. в рубле?' },
+    ]),
+  }], done) }],
+
+  ['purse', 'Сколько в кошельке', (m) => {
+    const p = panel(0);
+    const k1 = c08_purse(p, 450, 240, 360, 210); show(k1, .2);
+    const k2 = c08_purse(p, 1150, 240, 420, 210); show(k2, .4);
+    const a = c08_row(k1, [[50, 'к.'], [5, 'к.']], 0, 0, 62, 140); a.forEach(c => put(c, { o: 0, s: .4 }));
+    a.forEach((c, i) => pop(c, m('p1', i * .3)));
+    text(p, '2 монеты', 450, 76, m('p1', .5), { size: 26, fill: COL.dim, anchor: 'middle' });
+    uCounter(p, 450, 430, '50 к.', m('s1'), [[m('s1b'), '55 к.']], { size: 60, fill: COL.task });
+    const b = c08_row(k2, [[50, 'к.'], [10, 'к.'], [1, 'к.']], 0, 0, 56, 130); b.forEach(c => put(c, { o: 0, s: .4 }));
+    b.forEach((c, i) => pop(c, m('p2', i * .3)));
+    text(p, '3 монеты', 1150, 76, m('p2', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    uCounter(p, 1150, 430, '50 к.', m('s2'), [[m('s2b'), '60 к.'], [m('s2c'), '61 к.']], { size: 60, fill: COL.task });
+    draw(path(p, 'M100 490H1500', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('trap', -.3), .6);
+    // the trap: five 1-kopeck coins against one 10-kopeck coin
+    const k3 = c08_purse(p, 450, 680, 420, 170), k4 = c08_purse(p, 1150, 680, 260, 170);
+    show(k3, m('trap')); show(k4, m('trap', .3));
+    c08_row(k3, [[1, 'к.'], [1, 'к.'], [1, 'к.'], [1, 'к.'], [1, 'к.']], 0, 0, 32, 74);
+    c08_row(k4, [[10, 'к.']], 0, 0, 50, 0);
+    text(p, '5 монет', 450, 534, m('trap', .4), { size: 26, fill: COL.dim, anchor: 'middle' });
+    text(p, '1 монета', 1150, 534, m('trap', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    const w = T(p, '>', { x: 800, y: 700, size: 64, fill: COL.bad, weight: 700, anchor: 'middle', o: 0 });
+    show(w, m('wrong'));
+    const cr = path(p, 'M770 720L830 660', { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+    draw(cr, m('wrong', 1.6), .4);
+    hide(w, m('right'), .3); hide(cr, m('right'), .3);
+    text(p, '5 к.', 450, 830, m('val'), { size: 44, fill: COL.task, weight: 700, anchor: 'middle' });
+    text(p, '10 к.', 1150, 830, m('val', .8), { size: 44, fill: COL.task, weight: 700, anchor: 'middle' });
+    mline(p, '5 к. < 10 к.', 800, 830, m('right'), COL.good, 50);
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const sets = [[[10, 'к.'], [10, 'к.'], [5, 'к.']], [[50, 'к.']], [[5, 'к.'], [5, 'к.'], [5, 'к.'], [1, 'к.'], [1, 'к.']]];
+    S.c08p = sets.map((vals, i) => {
+      const k = c08_purse(p, 300 + i * 500, 600, 400, 200);
+      c08_row(k, vals, 0, 0, vals.length > 3 ? 31 : 44, vals.length > 3 ? 72 : 104);
+      show(k, .2 + i * .15);
+      return k;
+    });
+  }, { ask: done => quiz({ x: 200, y: 60, w: 1200, cls: 'side' }, [{
+    id: 'c-purse', prompt: ['В каком кошельке больше всего денег? Щёлкни по нему.'],
+    build: pickEls([0, 1, 2].map(i => ({ box: [300 + i * 500 - 215, 470, 430, 245], el: S.c08p[i], label: `Кошелёк ${i + 1}` })), 1,
+      'В среднем кошельке одна монета, но это 50 к. — больше, чем 25 к. и 17 к.',
+      i => i === 0 ? 'Здесь 10 к. + 10 к. + 5 к. = 25 к. Это меньше, чем 50 к.' : 'Монет здесь больше всего, но 5 + 5 + 5 + 1 + 1 = 17 к. Считай копейки, а не монеты.'),
+  }], done) }],
+
+  ['make', 'Набираем сумму', (m) => {
+    const p = panel(0);
+    text(p, 'Наши монеты:', 100, 140, .2, { size: 30, fill: COL.dim });
+    const vals = [1, 1, 5, 10, 10, 50], home = vals.map((_, i) => 420 + i * 130);
+    const cs = vals.map((v, i) => { const c = c08_coin(p, v, 'к.', home[i], 130, 50); put(c, { s: .4 }); pop(c, .3 + i * .1); return c; });
+    mline(p, 'Набираем 27 к.', 100, 290, m('ask'), COL.chalk, 40, 'start');
+    pulse(cs[5], m('big'), 1.15);
+    const no = mline(p, '50 > 27', home[5] + 120, 145, m('big', .2), COL.bad, 34, 'start');
+    hide(no, m('m10'), .4);
+    const go = (c, x, y, t0) => tw(c, { x, y }, t0, .6, out);
+    const row1 = [[3, 'm10'], [4, 'm10b'], [2, 'm5'], [0, 'm1'], [1, 'm1b']];
+    row1.forEach(([k, mk_], j) => go(cs[k], 420 + j * 120, 380, m(mk_)));
+    uCounter(p, 1250, 405, '0 к.', m('m10'), [[m('m10'), '10 к.'], [m('m10b'), '20 к.'], [m('m5'), '25 к.'], [m('m1'), '26 к.'], [m('m1b'), '27 к.']], { size: 60, fill: COL.task });
+    mline(p, '27 к. = 10 к. + 10 к. + 5 к. + 1 к. + 1 к.', 100, 490, m('done'), COL.chalk, 38, 'start');
+    // coins go back home, then make 56 kopecks
+    row1.forEach(([k]) => go(cs[k], home[k], 130, m('ask2', -.2)));
+    mline(p, 'Набираем 56 к.', 100, 590, m('ask2'), COL.chalk, 40, 'start');
+    [[5, 'n50'], [2, 'n5'], [0, 'n1']].forEach(([k, mk_], j) => go(cs[k], 420 + j * 120, 680, m(mk_)));
+    uCounter(p, 1250, 705, '0 к.', m('n50'), [[m('n50'), '50 к.'], [m('n5'), '55 к.'], [m('n1'), '56 к.']], { size: 60, fill: COL.task });
+    mline(p, '56 к. = 50 к. + 5 к. + 1 к.', 100, 800, m('n1', .8), COL.chalk, 38, 'start');
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    [1, 1, 5, 10, 10, 50].forEach((v, i) => show(c08_coin(p, v, 'к.', 475 + i * 130, 130, 50), .2 + i * .08));
+  }, { ask: done => quiz({ x: 280, y: 230, w: 1040, cls: 'side' }, [{
+    id: 'c-make', prompt: ['Какой монеты не хватает? Впиши, сколько она стоит.'],
+    build: blanks([
+      { parts: ['16 к. = 10 к. + ', { box: '5' }, ' к. + 1 к.'], why: '10 + 5 + 1 = 16.', hint: '10 к. и 1 к. — это 11 к. Сколько не хватает до 16?' },
+      { parts: ['51 к. = ', { box: '50' }, ' к. + 1 к.'], why: '50 + 1 = 51.', hint: '51 — это 5 десятков и 1 единица.' },
+      { parts: ['65 к. = 50 к. + 10 к. + ', { box: '5' }, ' к.'], why: '50 + 10 = 60, и ещё 5 — 65.', hint: '50 + 10 = 60. Сколько не хватает до 65?' },
+      { parts: ['70 к. = 50 к. + ', { box: '10' }, ' к. + 10 к.'], why: '50 + 10 + 10 = 70.', hint: '50 к. и 10 к. — это 60 к. Сколько не хватает до 70?' },
+    ]),
+  }], done) }],
+
+  ['compare', 'Сравниваем', (m) => {
+    const p = panel(0);
+    const q1 = cmpLine(p, '50 к.', '5 к.', 110, .2);
+    setSign(p, q1, '>', 110, m('a', .6));
+    const q2 = cmpLine(p, '100 к.', '1 р.', 200, m('b'));
+    setSign(p, q2, '=', 200, m('b', 1.2));
+    const q3 = cmpLine(p, '1 к.', '1 р.', 290, m('c'));
+    mline(p, '1 = 1', 1180, 290, m('wrong'), COL.bad, 44);
+    cross(p, 1110, 280, 1250, 262, m('wrong', 1.4));
+    // one rouble as a hundred kopecks, drawn 10 by 10
+    const dots = [];
+    for (let i = 0; i < 100; i++) {
+      const c = c08_coin(p, 1, 'к.', 380 + (i % 10) * 32, 400 + Math.floor(i / 10) * 32, 12);
+      put(c, { s: .4 }); pop(c, m('grid', i * .008)); dots.push(c);
+    }
+    uBracket(p, 364, 684, 735, '1 р. = 100 к.', COL.whole, m('grid', .8));
+    const one = c08_coin(p, 1, 'к.', 880, 544, 12); put(one, { s: .4 }); pop(one, m('one'));
+    const ring = mk('circle', { cx: 880, cy: 544, r: 26, fill: 'none', stroke: COL.task, 'stroke-width': 3 }, p);
+    put(ring, { o: 0 }); show(ring, m('one', .2));
+    text(p, '1 к.', 880, 610, m('one', .3), { size: 32, fill: COL.task, weight: 700, anchor: 'middle' });
+    setSign(p, q3, '<', 290, m('ans'));
+    const last = dots[99];
+    tw(last, { o: .15 }, m('diff', .6), .5);
+    cross(p, 668, 676, 700, 704, m('diff', .6));
+    mline(p, '100 к. − 1 к. = 99 к.', 1220, 520, m('rule'), COL.chalk, 46);
+    mline(p, '1 р. больше 1 к. на 99 к.', 1220, 610, m('rule', 1), COL.good, 40);
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 600, 130, .2, { size: 30, fill: COL.dim });
+    mline(p, '1 р. = 100 к.', 720, 130, .3, COL.whole, 46, 'start');
+  }, { ask: done => quiz({ x: 220, y: 190, w: 1160, cls: 'side' }, [{
+    id: 'c-compare', prompt: ['Какой знак поставить: <, = или >? Рубли сначала переведи в копейки.'],
+    build: grid([
+      { parts: ['50 к.  ○  5 к.'], ans: ['gt'], why: '50 больше 5.' },
+      { parts: ['1 р.  ○  100 к.'], ans: ['eq'], why: 'В рубле ровно 100 к.' },
+      { parts: ['1 к.  ○  1 р.'], ans: ['lt'], why: '1 р. = 100 к., а 1 к. меньше 100 к.' },
+      { parts: ['99 к.  ○  1 р.'], ans: ['lt'], why: '1 р. = 100 к., а 99 к. меньше 100 к. — не хватает одной копейки.' },
+      { parts: ['50 к. + 50 к.  ○  1 р.'], ans: ['eq'], why: '50 к. + 50 к. = 100 к. = 1 р.' },
+      { parts: ['1 р.  ○  90 к.'], ans: ['gt'], why: '1 р. = 100 к., а 100 больше 90.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['shop', 'Задача про покупку', (m) => {
+    const p = panel(0);
+    text(p, 'Было у Иры:', 120, 150, .2, { size: 32, weight: 600 });
+    const a = c08_coin(p, 5, 'р.', 470, 135, 62), b = c08_coin(p, 2, 'р.', 620, 135, 62);
+    put(a, { s: .4 }); pop(a, .3); put(b, { s: .4 }); pop(b, .5);
+    // the price tag
+    const tag = G(p, { o: 0 });
+    path(tag, 'M900 95H1130V175H900L870 135Z', { stroke: COL.bad, 'stroke-width': 3, fill: COL.bad, 'fill-opacity': .1 });
+    mk('circle', { cx: 895, cy: 135, r: 7, fill: 'none', stroke: COL.bad, 'stroke-width': 2 }, tag);
+    T(tag, 'тетради', { x: 1015, y: 128, size: 26, fill: COL.dim, anchor: 'middle' });
+    T(tag, '6 р.', { x: 1015, y: 164, size: 34, fill: COL.bad, weight: 700, anchor: 'middle' });
+    show(tag, m('spent'));
+    text(p, 'потратила', 1015, 215, m('spent', .3), { size: 26, fill: COL.dim, anchor: 'middle' });
+    text(p, 'Осталось — ? р.', 1240, 150, m('ask'), { size: 32, fill: COL.good, weight: 700 });
+    // seven roubles as seven blocks: 5 and 2
+    const U = 90, x0 = 380, bl = [];
+    for (let i = 0; i < 7; i++) {
+      const r = mk('rect', { x: x0 + i * U + 2, y: 290, width: U - 4, height: 60, rx: 6, fill: COL.whole, 'fill-opacity': .5, stroke: COL.whole, 'stroke-width': 2 }, p);
+      put(r, { o: 0 }); show(r, m('s1', i < 5 ? 0 : .5), .4); bl.push(r);
+    }
+    uBracket(p, x0, x0 + 5 * U, 275, '5 р.', COL.whole, m('s1'), { up: true, size: 26 });
+    uBracket(p, x0 + 5 * U, x0 + 7 * U, 275, '2 р.', COL.whole, m('s1', .5), { up: true, size: 26 });
+    bl.slice(0, 6).forEach(r => tw(r, { o: .2 }, m('s2', .3), .5));
+    draw(path(p, `M${x0} 370H${x0 + 6 * U}`, { stroke: COL.bad, 'stroke-width': 4 }, { d: 0 }), m('s2', .3), .5);
+    text(p, 'потратила 6 р.', x0 + 3 * U, 405, m('s2', .5), { size: 26, fill: COL.bad, anchor: 'middle', weight: 600 });
+    const lastBox = mk('rect', { x: x0 + 6 * U - 2, y: 284, width: U + 4, height: 72, rx: 8, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(lastBox, { o: 0 }); show(lastBox, m('s2', 1));
+    text(p, '1 р.', x0 + 6.5 * U, 405, m('s2', 1.2), { size: 28, fill: COL.good, anchor: 'middle', weight: 700 });
+    mline(p, '1)  5 + 2 = 7 (р.) — было', 380, 530, m('s1'), COL.chalk, 44, 'start');
+    mline(p, '2)  7 − 6 = 1 (р.) — осталось', 380, 615, m('s2'), COL.chalk, 44, 'start');
+    text(p, 'Ответ: 1 р.', 380, 730, m('ans'), { size: 40, fill: COL.good, weight: 700 });
+  }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Деньги считают в рублях (р.) и копейках (к.).', 'w1', false],
+     ['1 р. = 100 к.', 'w2', true],
+     ['Одну сумму можно набрать разными монетами.', 'w3', false],
+     ['Считай не монеты, а сколько они стоят.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-money', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['1 р. = ', { box: '100' }, ' к.'], why: 'В рубле 100 копеек.', hint: 'Вспомни: сколько копеек в рубле?' },
+      { parts: ['50 к. + 50 к. = ', { box: '1' }, ' р.'], why: '50 к. + 50 к. = 100 к., а это 1 р.', hint: 'Сложи копейки, а потом переведи 100 к. в рубли.' },
+      { parts: ['1 р. − 1 к. = ', { box: '99' }, ' к.'], why: '1 р. = 100 к. 100 − 1 = 99.', hint: 'Переведи рубль в копейки: 1 р. = 100 к.' },
+      { parts: ['50 к. + 10 к. + 10 к. = ', { box: '70' }, ' к.'], why: '50 + 10 = 60, 60 + 10 = 70.', hint: 'Прибавляй по одной монете: 50, потом 60, потом …' },
+      { parts: ['10 р. + 20 р. = ', { box: '30' }, ' р.'], why: '1 дес. + 2 дес. = 3 дес., то есть 30.', hint: 'Десять и двадцать — это 1 десяток и 2 десятка.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-paint', prompt: ['У Жени и Саши было денег поровну. Саша купил альбом за 20 р., а Женя — краски за 22 р. У кого денег осталось меньше и на сколько?'],
+    build: choice([['У Жени, на 2 р.'], ['У Саши, на 2 р.'], ['У Жени, на 42 р.']], 0,
+      'Женя потратил на 22 − 20 = 2 р. больше, значит, у него осталось на 2 р. меньше.',
+      [null, 'Саша потратил меньше — 20 р., значит, у него осталось больше. Меньше осталось у того, кто потратил больше.',
+       'Цены не нужно складывать — их нужно сравнить: 22 − 20 = 2.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

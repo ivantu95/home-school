@@ -7,7 +7,7 @@
 // Observe aborted incoming transitions before the first rendering opportunity.
 addEventListener('pagereveal', e => e.viewTransition?.ready.catch(() => {}));
 </script>
-<title>Математика. 2 класс</title>
+<title>Математика, 2 класс</title>
 <meta name="description" content="ONE SENTENCE ABOUT THE BOOK.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d2b27'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='48' fill='%23f0b45a'%3E∞%3C/text%3E%3C/svg%3E">
 <script src="unit-art.js"></script>
@@ -196,8 +196,8 @@ main#contents { padding-bottom: 80px; }
   </div>
   <svg class="mascot draw" id="guide" width="210" height="147"></svg>
   <p class="kicker">Анимированная книга · 2 класс</p>
-  <h1>Мерим <i>и</i> считаем</h1>
-  <p class="lede">Короткие уроки с картинками, которые двигаются, и вопросами прямо в рисунке. По учебнику «Математика. 2 класс, часть 1» (М. И. Моро и др.).</p>
+  <h1>Математика, <i>2</i> класс</h1>
+  <p class="lede">Весь курс второго класса: короткие уроки с картинками, которые двигаются, и вопросами прямо в рисунке. По учебнику «Математика. 2 класс» (М. И. Моро и др.), части 1 и 2.</p>
   <div class="acts">
     <a class="btn go" href="#contents">Открыть книгу<svg viewBox="0 0 16 16"><path d="M6 2.5 11.5 8 6 13.5 4.6 12.1 8.7 8 4.6 3.9z"/></svg></a>
     <a class="btn quiet" id="resume" hidden></a>
@@ -207,7 +207,7 @@ main#contents { padding-bottom: 80px; }
 
 <main id="contents">
   <header class="top">
-    <a class="home" href="#book" aria-label="На обложку"><svg class="mascot" id="guideSmall" width="52" height="36"></svg><strong>Мерим <i>и</i> считаем</strong></a>
+    <a class="home" href="#book" aria-label="На обложку"><svg class="mascot" id="guideSmall" width="52" height="36"></svg><strong>Математика, <i>2</i> класс</strong></a>
     <span class="prog" id="prog"></span>
   </header>
   <div id="units"></div>
@@ -216,8 +216,9 @@ main#contents { padding-bottom: 80px; }
 <script>
 'use strict';
 // Chapters are numbered in order through the units. Add a chapter here when its lesson is ready.
-const UNITS = [   // [unit title, [[chapter title, minutes], ...]]; chapters are numbered in order. Add a chapter when its lesson is ready.
-  ['Числа от 1 до 100. Нумерация', [['Миллиметр', 9], ['Метр', 10]]],
+const UNITS = [   // создаётся tools/moro2/update_index.py из course.py
+  ["Нумерация", [["Числа от 1 до 20", 6], ["Десятки. Числа до 100", 9], ["Однозначные и двузначные числа", 9], ["Миллиметр", 9], ["Сотня", 8], ["Метр", 10], ["Разрядные слагаемые", 9], ["Рубль. Копейка", 9], ["Повторение: нумерация", 10]]],
+  ["Сложение и вычитание", [["Обратные задачи", 9], ["Сумма и разность отрезков", 8], ["Неизвестное уменьшаемое и вычитаемое", 10]]],
 ];
 const HUES = ['#f4a48c', '#86c9e8', '#f3c95c', '#e8a0c8', '#8fd6b0', '#bba8ee', '#f0b45a'];
 const id = n => 'ch' + String(n).padStart(2, '0');

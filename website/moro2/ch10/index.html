@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обратные задачи</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 10, title: 'Обратные задачи', minutes: 9, language: 'ru', next: '../ch11/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+const cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+// Colours of this chapter: first part blue (COL.whole), second part orange (COL.task), the unknown "?" pink (COL.rat),
+// a found answer green (COL.good). The scheme stays the same from problem to problem; only the "?" moves.
+const ASK = COL.rat;
+// One part of a scheme: a bar of n units (u px each) from x, top at y. Starts hidden.
+function c10_bar(p, x, y, n, u, colr, h = 60) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x, y, width: n * u, height: h, rx: 6, fill: colr, 'fill-opacity': .4, stroke: colr, 'stroke-width': 3 }, g);
+  let d = '';
+  for (let i = 1; i < n; i++) d += `M${x + i * u} ${y + 8}V${y + h - 8}`;
+  if (d) path(g, d, { stroke: COL.board, 'stroke-width': 2, 'stroke-opacity': .55 });
+  return g;
+}
+// A label whose text and colour change at given times: steps = [[t, 'text', colour], ...]. Shown at t0.
+function c10_label(p, x, y, first, colr, t0, steps = [], { size = 34, anchor = 'middle' } = {}) {
+  const e = T(p, first, { x, y, size, fill: colr, weight: 700, anchor, o: 0 });
+  show(e, t0);
+  steps.forEach(([t, s, c]) => { prog(q => { if (q >= 1) { e.textContent = s; e.setAttribute('fill', c); } }, t, .01, lin); pulse(e, t, 1.2); });
+  return e;
+}
+// A two-part scheme: parts a and b (units), u px per unit, from x0, bar top at y.
+// Labels above the parts, names under them, a bracket under the whole. Returns the label elements.
+function c10_scheme(p, x0, y, a, b, u, o) {
+  const { t0 = .2, la, lb, lw, na, nb, size = 34, h = 60, sa = [], sb = [], sw = [], tb = t0 } = o;
+  show(c10_bar(p, x0, y, a, u, COL.whole, h), t0, .5);
+  show(c10_bar(p, x0 + a * u, y, b, u, COL.task, h), tb, .5);
+  const A = c10_label(p, x0 + a * u / 2, y - 16, la[0], la[1], t0, sa, { size });
+  const B = c10_label(p, x0 + (a + b / 2) * u, y - 16, lb[0], lb[1], tb, sb, { size });
+  if (na) text(p, na, x0 + a * u / 2, y + h + size * .9, t0, { size: size * .75, fill: COL.dim, anchor: 'middle' });
+  if (nb) text(p, nb, x0 + (a + b / 2) * u, y + h + size * .9, tb, { size: size * .75, fill: COL.dim, anchor: 'middle' });
+  const by = y + h + size * 1.4;
+  uBracket(p, x0, x0 + (a + b) * u, by, null, COL.chalk, o.tw ?? tb);
+  const W = c10_label(p, x0 + (a + b) * u / 2, by + size * 1.2, lw[0], lw[1], o.tw ?? tb, sw, { size });
+  return { A, B, W };
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Обратные задачи', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 10', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Обратные задачи', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'что было известно — станет искомым', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['direct', 'Задача про покупку', (m) => {
+    const p = panel(0);
+    text(p, 'Задача 1', 120, 110, .2, { size: 28, fill: COL.dim, weight: 600 });
+    text(p, 'Вера купила блокнот за 6 р. и карандаш за 4 р.', 120, 165, .3, { size: 36 });
+    text(p, 'Сколько стоили блокнот и карандаш вместе?', 120, 215, m('ask'), { size: 36 });
+    const s = c10_scheme(p, 300, 330, 6, 4, 100, {
+      t0: m('note'), tb: m('pencil'), tw: m('ask', .3), la: ['6 р.', COL.whole], lb: ['4 р.', COL.task], lw: ['? р.', ASK],
+      na: 'блокнот', nb: 'карандаш', sw: [[m('ans'), '10 р.', COL.good]],
+    });
+    void s;
+    text(p, 'Блокнот —', 150, 640, m('brief'), { size: 34 });
+    text(p, 'Карандаш —', 150, 700, m('brief', .4), { size: 34 });
+    text(p, 'Всего —', 150, 760, m('brief', .8), { size: 34 });
+    c10_label(p, 385, 640, '6 р.', COL.whole, m('brief', .2), [], { anchor: 'start' });
+    c10_label(p, 385, 700, '4 р.', COL.task, m('brief', .6), [], { anchor: 'start' });
+    c10_label(p, 385, 760, '? р.', ASK, m('brief', 1), [[m('ans'), '10 р.', COL.good]], { anchor: 'start' });
+    draw(path(p, 'M680 600V790', { stroke: COL.faint, 'stroke-width': 2 }, { d: 0 }), m('sum', -.3), .4);
+    mline(p, '6 + 4 = 10 (р.)', 780, 680, m('sum'), COL.chalk, 50, 'start');
+    text(p, 'Ответ: 10 р.', 780, 760, m('ans'), { size: 40, fill: COL.good, weight: 700 });
+  }],
+
+  ['inverse', 'Перевернём задачу', (m) => {
+    const p = panel(0);
+    text(p, 'Задача 2', 120, 110, .2, { size: 28, fill: COL.dim, weight: 600 });
+    text(p, 'На 10 р. Вера купила блокнот и карандаш.', 120, 165, m('known'), { size: 36 });
+    text(p, 'Блокнот стоил 6 р. Сколько стоил карандаш?', 120, 215, m('note'), { size: 36 });
+    const s = c10_scheme(p, 300, 330, 6, 4, 100, {
+      t0: .3, la: ['6 р.', COL.whole], lb: ['4 р.', COL.task], lw: ['10 р.', COL.good],
+      na: 'блокнот', nb: 'карандаш',
+      sw: [[m('known'), '10 р.', COL.chalk]], sb: [[m('ask'), '? р.', ASK], [m('res', .8), '4 р.', COL.good]],
+    });
+    pulse(s.A, m('note'), 1.2);
+    text(p, 'Блокнот —', 150, 640, .4, { size: 34 });
+    text(p, 'Карандаш —', 150, 700, .4, { size: 34 });
+    text(p, 'Всего —', 150, 760, .4, { size: 34 });
+    c10_label(p, 385, 640, '6 р.', COL.whole, .5, [], { anchor: 'start' });
+    c10_label(p, 385, 700, '4 р.', COL.task, .5, [[m('ask'), '? р.', ASK], [m('res', .8), '4 р.', COL.good]], { anchor: 'start' });
+    c10_label(p, 385, 760, '10 р.', COL.good, .5, [[m('known'), '10 р.', COL.chalk]], { anchor: 'start' });
+    path(p, 'M680 600V790', { stroke: COL.faint, 'stroke-width': 2 });
+    const w = mline(p, '10 + 6 = 16', 780, 680, m('wrong'), COL.bad, 50, 'start');
+    const c = path(p, 'M770 690L1060 650', { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+    draw(c, m('wrong', 2.6), .4);
+    const no = text(p, '16 р. > 10 р.?', 1100, 680, m('wrong', 1.8), { size: 34, fill: COL.bad, weight: 600 });
+    [w, c, no].forEach(e => hide(e, m('sub', -.2), .4));
+    mline(p, '10 − 6 = 4 (р.)', 780, 680, m('res'), COL.chalk, 50, 'start');
+    text(p, 'Ответ: 4 р.', 780, 760, m('res', 1), { size: 40, fill: COL.good, weight: 700 });
+    text(p, '— как в задаче 1', 1020, 760, m('same'), { size: 30, fill: COL.dim });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    c10_scheme(p, 530, 120, 5, 4, 60, { t0: .2, la: ['5', COL.whole], lb: ['4', COL.task], lw: ['?', ASK], na: 'окуни', nb: 'лещи', size: 30, h: 46 });
+  }, { ask: done => quiz({ x: 280, y: 300, w: 1040, cls: 'side' }, [{
+    id: 'c-fish', prompt: ['Володя поймал 5 окуней и 4 леща. Сколько всего рыб он поймал? Реши задачу и две обратные к ней.'],
+    build: blanks([
+      { parts: ['Окуней 5, лещей 4. Всего — ', { box: '9' }, ' рыб'], why: 'Ищем всё — складываем: 5 + 4 = 9.', hint: 'Ищем, сколько всего рыб. Сложи окуней и лещей.' },
+      { parts: ['Всего 9 рыб, окуней 5. Лещей — ', { box: '4' }], why: 'Ищем часть — вычитаем: 9 − 5 = 4.', hint: 'Лещи — это часть улова. Из всех рыб убери окуней.' },
+      { parts: ['Всего 9 рыб, лещей 4. Окуней — ', { box: '5' }], why: 'Ищем часть — вычитаем: 9 − 4 = 5.', hint: 'Окуни — это часть улова. Из всех рыб убери лещей.' },
+    ]),
+  }], done) }],
+
+  ['rule', 'Три задачи — одна схема', (m) => {
+    const p = panel(0);
+    const rows = [
+      ['t1', ['6 р.', COL.whole], ['4 р.', COL.task], ['? р.', ASK], '6 + 4 = 10', 'ищем всё'],
+      ['t2', ['6 р.', COL.whole], ['? р.', ASK], ['10 р.', COL.chalk], '10 − 6 = 4', 'ищем часть'],
+      ['t3', ['? р.', ASK], ['4 р.', COL.task], ['10 р.', COL.chalk], '10 − 4 = 6', 'ищем часть'],
+    ];
+    rows.forEach(([mark, la, lb, lw, ex, what], i) => {
+      const y = 130 + i * 200, t0 = m(mark);
+      const n = G(p, { o: 0 });
+      mk('circle', { cx: 140, cy: y + 18, r: 26, fill: COL.dim }, n);
+      T(n, String(i + 1), { x: 140, y: y + 29, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      show(n, t0);
+      const s = c10_scheme(p, 220, y, 6, 4, 40, { t0, la, lb, lw, size: 28, h: 40 });
+      [s.A, s.B, s.W].filter(e => e.getAttribute('fill') === ASK).forEach(e => pulse(e, m('same', i * .4), 1.5));
+      mline(p, ex, 720, y + 40, t0 + .6, COL.chalk, 46, 'start');
+      text(p, what, 1120, y + 38, m('how', i ? 1.2 : 0), { size: 32, fill: ASK, weight: 600 });
+    });
+    text(p, 'Задачи 2 и 3 — обратные задаче 1.', 800, 770, m('rule'), { size: 36, anchor: 'middle', weight: 600 });
+    text(p, 'Известное стало искомым, а искомое — известным.', 800, 830, m('rule', 2), { size: 32, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 60, y: 40, w: 1480, cls: 'side' }, [{
+    id: 'c-which', prompt: ['Данная задача: «За мяч и скакалку заплатили 45 р. Мяч стоил 40 р. Сколько стоила скакалка?» Какие задачи обратные ей?'],
+    build: grid([
+      { parts: ['Мяч стоит 40 р., скакалка — 5 р. Сколько стоят мяч и скакалка вместе?'], ans: ['yes'], why: 'Сумма 45 р. стала искомой, а цена скакалки — известной. Это обратная задача.' },
+      { parts: ['Мяч стоит 40 р., а скакалка — на 35 р. дешевле. Сколько стоит скакалка?'], ans: ['no'], why: 'В данной задаче не было ни числа 35, ни слова «дешевле». Это другая задача.' },
+      { parts: ['За мяч и скакалку заплатили 45 р. Скакалка стоила 5 р. Сколько стоил мяч?'], ans: ['yes'], why: 'Цена мяча стала искомой, а цена скакалки — известной. Это обратная задача.' },
+      { parts: ['Мяч стоит 40 р., скакалка — 5 р. На сколько мяч дороже скакалки?'], ans: ['no'], why: 'Здесь ищут, на сколько одно дороже другого. В данной задаче этого не было.' },
+    ], [['yes', 'обратная'], ['no', 'не обратная']], { multi: false, text: true }),
+  }], done) }],
+
+  ['story', 'Сколько было?', (m) => {
+    const p = panel(0);
+    text(p, 'Ваня купил блокнот за 7 р., и у него осталось 9 р.', 120, 110, m('buy'), { size: 34 });
+    text(p, 'Сколько рублей было у Вани?', 120, 160, m('ask'), { size: 34 });
+    const s = c10_scheme(p, 320, 285, 7, 9, 60, {
+      t0: m('buy'), tb: m('left'), tw: m('ask', .3),
+      la: ['7 р.', COL.whole], lb: ['9 р.', COL.task], lw: ['? р.', ASK], na: 'потратил', nb: 'осталось',
+      sw: [[m('sum', .8), '16 р.', COL.good], [m('inv1'), '16 р.', COL.chalk]],
+      sb: [[m('inv1', .4), '? р.', ASK], [m('r1', .8), '9 р.', COL.good], [m('inv2'), '9 р.', COL.chalk]],
+      sa: [[m('inv2', .4), '? р.', ASK], [m('r2', .8), '7 р.', COL.good]],
+    });
+    text(p, 'было', 800, 470, m('ask', .5), { size: 26, fill: COL.dim, anchor: 'middle' });
+    const w = mline(p, '9 − 7 = 2', 1250, 160, m('wrong'), COL.bad, 46, 'start');
+    const c = path(p, 'M1240 168L1450 132', { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 });
+    draw(c, m('wrong', 1), .4);
+    [w, c].forEach(e => hide(e, m('scheme', 1.5), .4));
+    pulse(s.W, m('scheme', .8), 1.3);
+    mline(p, '7 + 9 = 16 (р.) — было', 160, 600, m('sum'), COL.chalk, 44, 'start');
+    draw(path(p, 'M120 640H1480', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('inv1', -.3), .6);
+    text(p, 'Было 16 р., потратил 7 р. Сколько осталось?', 160, 705, m('inv1'), { size: 30, fill: COL.dim });
+    mline(p, '16 − 7 = 9 (р.)', 1060, 705, m('r1'), COL.chalk, 44, 'start');
+    text(p, 'Было 16 р., осталось 9 р. Сколько стоил блокнот?', 160, 795, m('inv2'), { size: 30, fill: COL.dim });
+    mline(p, '16 − 9 = 7 (р.)', 1060, 795, m('r2'), COL.chalk, 44, 'start');
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    c10_scheme(p, 480, 120, 6, 9, 40, { t0: .2, la: ['', COL.whole], lb: ['', COL.task], lw: ['было', COL.dim], na: 'потратила', nb: 'осталось', size: 30, h: 46 });
+  }, { ask: done => quiz({ x: 280, y: 300, w: 1040, cls: 'side' }, [{
+    id: 'c-pen', prompt: ['У Кати было 15 р. Она купила ручку за 6 р. Сколько рублей у неё осталось? Реши задачу и две обратные к ней.'],
+    build: blanks([
+      { parts: ['Было 15 р., ручка 6 р. Осталось ', { box: '9' }, ' р.'], why: 'Осталось — это часть: 15 − 6 = 9.', hint: 'Из того, что было, убери то, что потратила.' },
+      { parts: ['Было 15 р., осталось 9 р. Ручка стоила ', { box: '6' }, ' р.'], why: 'Цена ручки — тоже часть: 15 − 9 = 6.', hint: 'Потраченное — часть того, что было. Из всего вычти другую часть.' },
+      { parts: ['Ручка 6 р., осталось 9 р. Было ', { box: '15' }, ' р.'], why: 'Было — это всё вместе: 6 + 9 = 15.', hint: 'Было — это потраченное и оставшееся вместе. Сложи.' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['В обратной задаче известное становится искомым,', 'а искомое — известным.', 'w1'],
+     ['Схема у задачи и обратных к ней одна и та же.', null, 'w2'],
+     ['Ищем всё — складываем.', 'Ищем часть — из всего вычитаем другую часть.', 'w3'],
+     ['Обратной задачей можно проверить решение.', null, 'w4']].forEach(([s1, s2, mark], i) => {
+      const g = G(p, { x: -16, y: 280 + i * 140, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, s1, { x: 260, size: 34, weight: 600 });
+      if (s2) T(g, s2, { x: 260, y: 46, size: 34, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-parts', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Отрезок состоит из двух частей: 6 см и 2 см. Весь отрезок — ', { box: '8' }, ' см.'], why: 'Ищем всё — складываем: 6 + 2 = 8.', hint: 'Весь отрезок — это обе части вместе.' },
+      { parts: ['Весь отрезок 8 см, одна часть 6 см. Другая часть — ', { box: '2' }, ' см.'], why: 'Ищем часть — вычитаем: 8 − 6 = 2.', hint: 'Из всего отрезка убери известную часть.' },
+      { parts: ['Отрезок 10 см. Точка отделила от него 4 см. Второй отрезок — ', { box: '6' }, ' см.'], why: '10 − 4 = 6.', hint: 'Две части вместе — это 10 см. Одна часть 4 см.' },
+      { parts: ['Красных и синих карандашей вместе 13, красных 7. Синих — ', { box: '6' }, '.'], why: 'Синие — часть: 13 − 7 = 6.', hint: 'Всего 13, из них 7 красных. Остальные синие.' },
+      { parts: ['Было 18 р., потратили 8 р. Осталось ', { box: '10' }, ' р.'], why: '18 − 8 = 10.', hint: 'Из того, что было, убери потраченное.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-class', prompt: ['Задача: «В классе 12 девочек и 10 мальчиков. Сколько всего учеников?» Обратная к ней: «В классе 22 ученика, из них 10 мальчиков. Сколько девочек?» Как решить обратную задачу?'],
+    build: choice([['22 − 10 = 12'], ['22 + 10 = 32'], ['12 + 10 = 22']], 0,
+      'Девочки — часть класса. Ищем часть — из всего вычитаем другую часть: 22 − 10 = 12.',
+      [null, 'Девочек не может быть больше, чем всех учеников. Ищем часть — значит, вычитаем: 22 − 10.',
+       'Так решается данная задача: там искали всех вместе. А в обратной ищем девочек: 22 − 10.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Метр</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 6, title: 'Метр', minutes: 10, language: 'ru', next: '../ch07/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// "left ? right": a comparison whose sign is chosen later. Returns the "?" so it can be replaced.
+const cmpLine = (p, l, r, y, t0, tr = t0) => {
+  mline(p, l, 730, y, t0, COL.chalk, 52, 'end');
+  mline(p, r, 870, y, tr, COL.chalk, 52, 'start');
+  const q = T(p, '?', { x: 800, y, size: 52, fill: COL.task, anchor: 'middle', weight: 700, o: 0 });
+  show(q, t0);
+  return q;
+};
+const setSign = (p, q, sign, y, t0) => {
+  hide(q, t0, .2);
+  const s = T(p, sign, { x: 800, y, size: 58, fill: COL.good, anchor: 'middle', weight: 700, o: 0 });
+  put(s, { s: .4 }); pop(s, t0 + .2);
+  return s;
+};
+const DM = 130, X0 = 150;   // one decimetre on the metre strip, and where the strip starts
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Метр', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 1 · Глава 6', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Метр', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'большая единица длины', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['recall', 'Лесенка единиц', (m) => {
+    const p = panel(0);
+    const steps = [
+      ['миллиметр', 'мм', COL.rat, null, 'mm'],
+      ['сантиметр', 'см', COL.task, '1 см = 10 мм', 'cm'],
+      ['дециметр', 'дм', COL.whole, '1 дм = 10 см', 'dm'],
+      ['метр', 'м', COL.good, '1 м = 10 дм', 'm'],
+    ];
+    steps.forEach(([name, short, colr, eq, mark], i) => {
+      const x = 130 + i * 350, y = 640 - i * 125;
+      const g = G(p, { o: 0, y: 20 });
+      mk('rect', { x, y, width: 290, height: 96, rx: 14, fill: colr, 'fill-opacity': .18, stroke: colr, 'stroke-width': 3 }, g);
+      const label = T(g, i === 3 ? '?' : name, { x: x + 145, y: y + 48, size: i === 3 ? 48 : 34, fill: colr, weight: 700, anchor: 'middle' });
+      T(g, short, { x: x + 145, y: y + 84, size: 24, fill: COL.dim, anchor: 'middle', o: i === 3 ? 0 : 1 });
+      tw(g, { o: 1, y: 0 }, m(mark), .5, out);
+      if (eq) {
+        const e = M(p, [eq], { x: x + 145, y: y - 30, size: 34, fill: COL.chalk, o: 0 });
+        show(e, i === 3 ? m('name', .3) : m(mark, .4));
+        draw(path(p, `M${x - 40} ${y + 110}Q${x - 30} ${y + 40} ${x - 4} ${y + 40}`, { stroke: COL.faint, 'stroke-width': 3 }, { d: 0 }), m(mark, .1), .5);
+      }
+      if (i === 3) {
+        prog(q => { label.textContent = q < 1 ? '?' : 'метр'; label.setAttribute('font-size', q < 1 ? 48 : 34); }, m('name'), .01, lin);
+        const sh = g.children[2];
+        tw(sh, { o: 1 }, m('name'), .4);
+        pulse(g, m('name', .1), 1.08);
+      }
+    });
+  }],
+
+  ['build', 'Собираем метр', (m) => {
+    const p = panel(0);
+    text(p, 'нарисовано мельче', 1450, 300, .3, { size: 22, fill: COL.faint, anchor: 'end' });
+    const bl = uBlocks(p, X0, 360, 10, DM, 70);
+    bl.forEach((g, i) => {
+      T(g, String(i + 1), { x: X0 + i * DM + DM / 2, y: 407, size: 32, fill: COL.board, weight: 700, anchor: 'middle' });
+      put(g, { o: 0, y: -30 });
+      tw(g, { o: 1, y: 0 }, m('d' + (i + 1)), .4, out);
+    });
+    text(p, '1 дм', X0 + DM / 2, 340, m('d1', .3), { size: 26, fill: COL.dim, anchor: 'middle' });
+    uBracket(p, X0, X0 + 10 * DM, 470, '1 метр', COL.good, m('meter'), { size: 40 });
+    mline(p, '1 м = 10 дм', 800, 680, m('rule'), COL.chalk, 76);
+    draw(path(p, 'M560 705H1040', { stroke: COL.good, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['cm100', 'В метре сто сантиметров', (m) => {
+    const p = panel(0);
+    const bl = uBlocks(p, X0, 360, 10, DM, 70);
+    bl.forEach(g => show(g, .2, .5));
+    let d = '';
+    for (let i = 0; i < 100; i++) if (i % 10) d += `M${X0 + i * DM / 10} 362v${i % 5 ? 18 : 28}`;
+    draw(path(p, d, { stroke: COL.board, 'stroke-width': 2.5 }, { d: 0 }), m('split'), 1.2);
+    text(p, '10 см', X0 + DM / 2, 470, m('split', .6), { size: 26, fill: COL.task, anchor: 'middle', weight: 600 });
+    for (let i = 1; i <= 10; i++) {
+      const n = T(p, String(i * 10), { x: X0 + i * DM, y: 335, size: 32, fill: COL.task, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, m('t' + i));
+      const c = path(p, `M${X0 + i * DM} 350v10`, { stroke: COL.task, 'stroke-width': 3 });
+      put(c, { o: 0 }); show(c, m('t' + i));
+    }
+    uBracket(p, X0, X0 + 10 * DM, 530, '1 м', COL.good, m('rule'), { size: 36 });
+    mline(p, '1 м = 100 см', 800, 700, m('rule', .3), COL.chalk, 76);
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const bl = uBlocks(p, 500, 140, 10, 60, 40);
+    bl.forEach(g => show(g, .2, .4));
+    uBracket(p, 500, 1100, 220, '1 м', COL.good, .4);
+  }, { ask: done => quiz({ x: 330, y: 300, w: 940, cls: 'side' }, [{
+    id: 'c-meter', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['1 м = ', { box: '10' }, ' дм'], why: 'Метр складывается из 10 дециметров.', hint: 'Вспомни, сколько дециметров мы собрали в метр.' },
+      { parts: ['1 м = ', { box: '100' }, ' см'], why: 'В каждом из 10 дециметров по 10 см: 10, 20, … 100.', hint: 'В каждом дециметре 10 см. Считай десятками.' },
+      { parts: ['1 дм = ', { box: '10' }, ' см'], why: 'В дециметре 10 сантиметров.', hint: 'Это ты знаешь с первого класса: дециметр — это сколько сантиметров?' },
+      { parts: ['1 дм = ', { box: '100' }, ' мм'], why: '1 дм = 10 см, в каждом сантиметре 10 мм: 100 мм.', hint: '1 дм = 10 см, а 1 см = 10 мм. Считай десятками миллиметров.' },
+    ]),
+  }], done) }],
+
+  ['where', 'Что меряют в метрах', (m) => {
+    const p = panel(0);
+    text(p, 'Длинное и высокое меряют в метрах', 800, 120, .2, { size: 36, anchor: 'middle', weight: 600 });
+    // a room, seen from above
+    const room = G(p, { o: 0 });
+    path(room, 'M120 330H460V600H120Z', { stroke: COL.whole, 'stroke-width': 4, fill: COL.whole, 'fill-opacity': .08 });
+    path(room, 'M380 600H440', { stroke: COL.board, 'stroke-width': 6 });
+    path(room, 'M380 600Q380 545 440 545', { stroke: COL.whole, 'stroke-width': 2, 'stroke-dasharray': '6 6' });
+    path(room, 'M120 650H460M135 640L120 650L135 660M445 640L460 650L445 660', { stroke: COL.task, 'stroke-width': 3 });
+    T(room, 'длина комнаты', { x: 290, y: 700, size: 28, fill: COL.task, anchor: 'middle', weight: 600 });
+    T(room, 'комната', { x: 290, y: 475, size: 30, fill: COL.dim, anchor: 'middle' });
+    show(room, m('room'), .6);
+    // a pupil next to a metre stick: 1 m = 300 px
+    const kid = G(p, { o: 0 });
+    const foot = 780, U = 300;
+    for (let i = 0; i < 10; i++) mk('rect', { x: 700, y: foot - (i + 1) * U / 10, width: 34, height: U / 10 - 2, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, kid);
+    mk('rect', { x: 700, y: foot - 1.3 * U, width: 34, height: .3 * U - 2, fill: COL.chalk, 'fill-opacity': .25, stroke: COL.chalk, 'stroke-width': 1.5 }, kid);
+    const H = 1.3 * U, cx = 800, top = foot - H;
+    mk('circle', { cx, cy: top + 36, r: 34, fill: 'none', stroke: COL.chalk, 'stroke-width': 4 }, kid);
+    path(kid, `M${cx} ${top + 70}V${top + 250}M${cx} ${top + 105}L${cx - 50} ${top + 190}M${cx} ${top + 105}L${cx + 50} ${top + 190}M${cx} ${top + 250}L${cx - 36} ${foot}M${cx} ${top + 250}L${cx + 36} ${foot}`, { stroke: COL.chalk, 'stroke-width': 5 });
+    path(kid, `M640 ${foot}H880`, { stroke: COL.faint, 'stroke-width': 3 });
+    uVBrace(kid, 670, foot - U, foot, COL.good);
+    T(kid, '1 м', { x: 660, y: foot - U / 2 + 10, size: 30, fill: COL.good, weight: 700, anchor: 'end' });
+    uVBrace(kid, 670, top, foot - U - 4, COL.task);
+    T(kid, '30 см', { x: 660, y: top + 55, size: 28, fill: COL.task, weight: 700, anchor: 'end' });
+    show(kid, m('kid'), .6);
+    // a three-storey house
+    const hs = G(p, { o: 0 });
+    path(hs, 'M1150 780V450H1420V780Z', { stroke: COL.rat, 'stroke-width': 4, fill: COL.rat, 'fill-opacity': .08 });
+    path(hs, 'M1130 450L1285 350L1440 450', { stroke: COL.rat, 'stroke-width': 4 });
+    for (let f = 0; f < 3; f++) for (let w = 0; w < 3; w++) mk('rect', { x: 1175 + w * 80, y: 475 + f * 105, width: 50, height: 55, fill: COL.int, 'fill-opacity': .35, stroke: COL.chalk, 'stroke-width': 2 }, hs);
+    T(hs, 'около 10 м', { x: 1285, y: 830, size: 30, fill: COL.rat, weight: 700, anchor: 'middle' });
+    show(hs, m('house'), .6);
+    text(p, 'рост около 1 м 30 см', 800, 840, m('kid', 1.5), { size: 28, fill: COL.dim, anchor: 'middle' });
+  }],
+
+  ['q2', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 200, y: 70, w: 1200, cls: 'side' }, [{
+    id: 'c-units', prompt: ['Какие единицы длины пропущены? Выбери для каждой строки.'],
+    build: grid([
+      { parts: ['Высота парты — 60 …'], ans: ['cm'], why: '60 см — это высота парты. 60 мм — меньше ладони, а 60 дм — это целых 6 метров.' },
+      { parts: ['Рост Дюймовочки — 25 …'], ans: ['mm'], why: 'Дюймовочка крошечная: 25 мм — это всего 2 с половиной сантиметра.' },
+      { parts: ['Высота трёхэтажного дома — 10 …'], ans: ['m'], why: 'Дом намного выше человека: около 10 м.' },
+      { parts: ['Длина коридора — 12 …'], ans: ['m'], why: 'Коридор длинный: его меряют в метрах.' },
+      { parts: ['Длина тетради — 2 …'], ans: ['dm'], why: 'Тетрадь длиной 2 дм, то есть 20 см.' },
+    ], [['mm', 'мм'], ['cm', 'см'], ['dm', 'дм'], ['m', 'м']], { multi: false, text: true }),
+  }], done) }],
+
+  ['compare', 'Сравниваем длины', (m) => {
+    const p = panel(0);
+    const U = 12;
+    const q1 = cmpLine(p, '1 м', '99 см', 150, .3);
+    const wrong = mline(p, '1 < 99', 1310, 150, m('wrong'), COL.bad, 44);
+    draw(path(p, 'M1235 140L1385 122', { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), m('wrong', 1.2), .4);
+    void wrong;
+    const A = G(p, { o: 0 });
+    for (let i = 0; i < 10; i++) mk('rect', { x: 200 + i * 10 * U + 1, y: 200, width: 10 * U - 2, height: 34, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, A);
+    show(A, m('cm'), .5);
+    text(p, '100 см', 185, 228, m('cm', .2), { size: 28, fill: COL.int, weight: 700, anchor: 'end' });
+    const B = G(p, { o: 0 });
+    mk('rect', { x: 200, y: 250, width: 99 * U, height: 34, rx: 3, fill: COL.rat, 'fill-opacity': .55, stroke: COL.rat, 'stroke-width': 2 }, B);
+    show(B, m('cm', .4), .5);
+    text(p, '99 см', 185, 278, m('cm', .5), { size: 28, fill: COL.rat, weight: 700, anchor: 'end' });
+    setSign(p, q1, '>', 150, m('ans'));
+    const diff = mk('rect', { x: 200 + 99 * U - 3, y: 194, width: U + 6, height: 46, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
+    put(diff, { o: 0 }); show(diff, m('ans', .5));
+    text(p, '1 см', 200 + 99.5 * U, 320, m('ans', .8), { size: 26, fill: COL.good, anchor: 'middle', weight: 700 });
+    // three metres two decimetres
+    draw(path(p, 'M100 370H1500', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('two', -.4), .6);
+    const W = 40;
+    const q2 = cmpLine(p, '3 м 2 дм', '32 дм', 460, m('two'), m('two', 1.5));
+    const C = G(p, { o: 0 });
+    for (let i = 0; i < 3; i++) mk('rect', { x: 200 + i * 10 * W + 1, y: 510, width: 10 * W - 2, height: 40, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, C);
+    mk('rect', { x: 200 + 30 * W + 1, y: 510, width: 2 * W - 2, height: 40, fill: COL.whole, 'fill-opacity': .7 }, C);
+    show(C, m('two', .3), .5);
+    const Dg = G(p, { o: 0 });
+    mk('rect', { x: 200, y: 570, width: 32 * W, height: 40, rx: 3, fill: COL.rat, 'fill-opacity': .5, stroke: COL.rat, 'stroke-width': 2 }, Dg);
+    for (let i = 1; i < 32; i++) path(Dg, `M${200 + i * W} 570v40`, { stroke: COL.board, 'stroke-width': 2, 'stroke-opacity': .7 });
+    show(Dg, m('two', 1.5), .5);
+    ['10 дм', '20 дм', '30 дм'].forEach((s, i) => {
+      const t = T(p, s, { x: 200 + (i + 1) * 10 * W, y: 660, size: 28, fill: COL.task, weight: 700, anchor: 'middle', o: 0 });
+      put(t, { s: .4 }); pop(t, m('m3', 1.2 + i * .7));
+      const c = path(p, `M${200 + (i + 1) * 10 * W} 505v-14`, { stroke: COL.task, 'stroke-width': 3 }); put(c, { o: 0 }); show(c, m('m3', 1.2 + i * .7));
+    });
+    text(p, '+ 2 дм', 200 + 31 * W, 498, m('plus'), { size: 28, fill: COL.whole, weight: 700, anchor: 'middle' });
+    setSign(p, q2, '=', 460, m('eq'));
+    pulse(C, m('eq', .3), 1.02); pulse(Dg, m('eq', .3), 1.02);
+    mline(p, '3 м 2 дм = 32 дм', 800, 760, m('eq', .8), COL.chalk, 48);
+  }],
+
+  ['q3', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 220, y: 60, w: 1160, cls: 'side' }, [{
+    id: 'c-compare', prompt: ['Какой знак поставить: <, = или >? Сначала переведи в одинаковые единицы.'],
+    build: grid([
+      { parts: ['1 м  ○  9 дм'], ans: ['gt'], why: '1 м = 10 дм, а 10 дм больше 9 дм.' },
+      { parts: ['10 см  ○  1 м'], ans: ['lt'], why: '1 м = 100 см, а 10 см меньше 100 см.' },
+      { parts: ['1 м  ○  100 см'], ans: ['eq'], why: 'В метре ровно 100 см.' },
+      { parts: ['2 м 8 дм  ○  30 дм'], ans: ['lt'], why: '2 м 8 дм = 20 дм + 8 дм = 28 дм, а 28 меньше 30.' },
+      { parts: ['2 дм 3 см  ○  23 см'], ans: ['eq'], why: '2 дм 3 см = 20 см + 3 см = 23 см.' },
+      { parts: ['1 дм 2 см  ○  14 см'], ans: ['lt'], why: '1 дм 2 см = 12 см, а 12 меньше 14.' },
+    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  }], done) }],
+
+  ['task', 'Задача про ткань', (m) => {
+    const p = panel(0);
+    const U = 200, x0 = 330;
+    const bar = (y, from, n, colr, t0) => {
+      const g = G(p, { o: 0, x: -20 });
+      for (let i = 0; i < n; i++) mk('rect', { x: x0 + (from + i) * U + 1, y, width: U - 2, height: 56, rx: 4, fill: colr, 'fill-opacity': .55, stroke: colr, 'stroke-width': 2 }, g);
+      tw(g, { o: 1, x: 0 }, t0, .5, out);
+      return g;
+    };
+    text(p, 'Юбка', x0 - 30, 268, m('skirt'), { size: 32, anchor: 'end', weight: 600 });
+    bar(230, 0, 2, COL.whole, m('skirt'));
+    text(p, '2 м', x0 + U, 215, m('skirt', .4), { size: 30, fill: COL.whole, anchor: 'middle', weight: 700 });
+    text(p, 'Платье', x0 - 30, 398, m('dress'), { size: 32, anchor: 'end', weight: 600 });
+    bar(360, 0, 2, COL.whole, m('dress'));
+    bar(360, 2, 1, COL.task, m('dress', 1.2));
+    const dash = path(p, `M${x0 + 2 * U} 220V430`, { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 6' }); put(dash, { o: 0 }); show(dash, m('dress', .8));
+    text(p, 'на 1 м больше', x0 + 2.5 * U, 455, m('dress', 1.4), { size: 26, fill: COL.task, anchor: 'middle', weight: 600 });
+    draw(path(p, `M${x0 + 3 * U + 60} 230H${x0 + 3 * U + 80}V416H${x0 + 3 * U + 60}`, { stroke: COL.good, 'stroke-width': 3 }, { d: 0 }), m('ask'), .5);
+    text(p, '? м всего', x0 + 3 * U + 100, 334, m('ask', .3), { size: 32, fill: COL.good, weight: 700 });
+    mline(p, '1)  2 + 1 = 3 (м) — на платье', x0, 570, m('s1'), COL.chalk, 44, 'start');
+    const lab3 = T(p, '3 м', { x: x0 + 1.5 * U, y: 345, size: 30, fill: COL.task, weight: 700, anchor: 'middle', o: 0 }); show(lab3, m('s1', 1.5));
+    mline(p, '2)  2 + 3 = 5 (м) — всего', x0, 650, m('s2'), COL.chalk, 44, 'start');
+    text(p, 'Ответ: 5 м ткани.', x0, 750, m('ans'), { size: 40, fill: COL.good, weight: 700 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    mline(p, '1 м = 100 см', 120, 300, .3, COL.good, 46, 'start');
+    mline(p, '1 дм = 10 см', 120, 380, .4, COL.whole, 46, 'start');
+  }, { ask: done => quiz({ x: 560, y: 160, w: 960, cls: 'side' }, [{
+    id: 'c-diff', prompt: ['На сколько сантиметров 1 м больше, чем 1 дм? А чем 1 см?'],
+    build: blanks([
+      { parts: ['1 м − 1 дм = ', { box: '90' }, ' см'], why: '1 м = 100 см, 1 дм = 10 см. 100 − 10 = 90.', hint: 'Переведи всё в сантиметры: 1 м = 100 см, 1 дм = 10 см.' },
+      { parts: ['1 м − 1 см = ', { box: '99' }, ' см'], why: '100 см − 1 см = 99 см.', hint: '1 м = 100 см. Сколько останется, если убрать 1 см?' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Метр — большая единица длины.', 'w1', false],
+     ['1 м = 10 дм', 'w2', true],
+     ['1 м = 100 см', 'w3', true],
+     ['Прежде чем сравнивать, переведи длины в одинаковые единицы.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-convert', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['1 м = ', { box: '100' }, ' см'], why: 'В метре 100 сантиметров.', hint: 'Вспомни: 10, 20, 30 … — сколько сантиметров в метре?' },
+      { parts: ['4 м = ', { box: '40' }, ' дм'], why: 'В каждом метре 10 дм, а в четырёх — 40 дм.', hint: 'В 1 м — 10 дм. Сколько в 4 м?' },
+      { parts: ['1 м 5 дм = ', { box: '15' }, ' дм'], why: '1 м = 10 дм, и ещё 5 дм: 15 дм.', hint: 'Переведи метр в дециметры и прибавь 5 дм.' },
+      { parts: ['50 дм = ', { box: '5' }, ' м'], why: 'В 50 дм пять раз по 10 дм — это 5 м.', hint: 'Сколько раз по 10 дм в 50 дм?' },
+      { parts: ['60 см = ', { box: '6' }, ' дм'], why: 'В 60 см шесть раз по 10 см — это 6 дм.', hint: 'В 1 дм — 10 см.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-ribbon', prompt: ['Ленточка была длиной 1 м. От неё отрезали 30 см. Сколько сантиметров ленточки осталось?'],
+    build: choice([['70 см'], ['29 см'], ['1 м 30 см']], 0,
+      '1 м = 100 см. 100 см − 30 см = 70 см.',
+      [null, 'Нельзя вычитать 30 − 1: это разные единицы. Сначала переведи 1 м в сантиметры — это 100 см.',
+       'Отрезали — значит, ленточка стала короче. Нужно вычитать: 100 см − 30 см.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

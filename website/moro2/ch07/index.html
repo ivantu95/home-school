@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разрядные слагаемые</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 7, title: 'Разрядные слагаемые', minutes: 9, language: 'ru', next: '../ch08/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Tens are blue, ones orange (BOOK.md).
+const TEN = COL.whole, ONE = COL.task, CH = COL.chalk;
+// A coloured line of math: items = [[str, colour], ...], placed around x (anchor 'middle' or 'start').
+// Shown at t0; returns the group with _xs (centre of each item) and _w (width).
+function c07_row(p, items, x, y, t0, size = 64, anchor = 'middle') {
+  const g = G(p, { o: 0 });
+  const ws = items.map(([s]) => mathW([s], size)), w = ws.reduce((a, b) => a + b, 0);
+  let cx = anchor === 'middle' ? x - w / 2 : x;
+  g._xs = items.map(([s, fill], i) => { M(g, [s], { x: cx, y, size, fill, anchor: 'start' }); cx += ws[i]; return cx - ws[i] / 2; });
+  g._w = w; g._x0 = cx - w;
+  show(g, t0);
+  return g;
+}
+// Digits 'd1d2' coloured per digit, e.g. 35 → 3 blue, 5 orange.
+const c07_n = n => [[String(Math.floor(n / 10)), TEN], [String(n % 10), ONE]];
+// A number card like the ones in the textbook: one cell (100 × 140) per digit. digits = [[d, colour], ...].
+// The card is opaque, so a one-digit card laid on a two-digit card hides its zero. Starts hidden.
+function c07_card(p, digits, x, y, frame) {
+  const g = G(p, { x, y, o: 0 });
+  const w = 100 * digits.length;
+  mk('rect', { x: 0, y: 0, width: w, height: 140, rx: 10, fill: COL.board, stroke: frame, 'stroke-width': 4 }, g);
+  mk('rect', { x: 0, y: 0, width: w, height: 140, rx: 10, fill: frame, 'fill-opacity': .14 }, g);
+  digits.forEach(([d, colr], i) => T(g, d, { x: 50 + i * 100, y: 104, size: 96, fill: colr, font: MATH, weight: 600, anchor: 'middle' }));
+  return g;
+}
+// Three bundles and five loose sticks (35), left part of the board.
+const C07_BX = [230, 345, 460], C07_SX = [590, 645, 700, 755, 810];
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Разрядные слагаемые', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 1 · Глава 7', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Разрядные слагаемые', { x: 800, y: 440, size: 92, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'составляем числа из десятков и единиц', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['compose', 'Десятки и единицы', (m) => {
+    const p = panel(0);
+    const y = 170, H = 150;
+    C07_BX.forEach((x, i) => show(uBundle(p, x, y, TEN, H), .3 + i * .15, .4));
+    uBracket(p, 180, 510, y + H + 30, '3 дес. = 30', TEN, m('thirty'), { size: 34 });
+    const cnt = uCounter(p, 1250, 330, '30', m('thirty'), [[m('sum'), '35']], { size: 140 });
+    C07_SX.forEach((x, i) => {
+      const s = uStick(p, x, y, ONE, H);
+      put(s, { y: y - 40 }); tw(s, { o: 1, y }, m('ones', i * .2), .4, out);
+    });
+    uBracket(p, 565, 835, y + H + 30, '5 ед. = 5', ONE, m('ones', 1.3), { size: 34 });
+    c07_row(p, [['30', TEN], [' + ', CH], ['5', ONE], [' = ', CH], ...c07_n(35)], 800, 640, m('sum'), 84);
+    hide(cnt, m('write'), .3);
+    uNum(p, 35, 1250, 330, m('write'), 140);
+    text(p, 'десятки', 1235, 400, m('write', .4), { size: 30, fill: TEN, anchor: 'end', weight: 600 });
+    text(p, 'единицы', 1265, 400, m('units'), { size: 30, fill: ONE, weight: 600 });
+  }],
+
+  ['take', 'Убираем десятки или единицы', (m) => {
+    const p = panel(0);
+    const y = 140, H = 140;
+    const B = C07_BX.map(x => { const b = uBundle(p, x, y, TEN, H); show(b, .3, .4); return b; });
+    const Sx = C07_SX.map(x => { const s = uStick(p, x, y, ONE, H); show(s, .3, .4); return s; });
+    uNum(p, 35, 1250, 260, .3, 120);
+    c07_row(p, [['30', TEN], [' + ', CH], ['5', ONE], [' = ', CH], ...c07_n(35)], 800, 460, .4, 64);
+    Sx.forEach((s, i) => tw(s, { o: .12, y: y - 30 }, m('ones', i * .1), .5));
+    c07_row(p, [...c07_n(35), [' − ', CH], ['5', ONE], [' = ', CH], ['30', TEN]], 800, 570, m('left30'), 64);
+    B.forEach(b => pulse(b, m('left30', .2), 1.06));
+    Sx.forEach(s => tw(s, { o: 1, y }, m('back'), .5, out));
+    B.forEach((b, i) => tw(b, { o: .12, y: y - 30 }, m('tens', i * .15), .5));
+    c07_row(p, [...c07_n(35), [' − ', CH], ['30', TEN], [' = ', CH], ['5', ONE]], 800, 680, m('left5'), 64);
+    Sx.forEach(s => pulse(s, m('left5', .2), 1.08));
+    const box = mk('rect', { x: 520, y: 500, width: 560, height: 212, rx: 16, fill: 'none', stroke: COL.good, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+    put(box, { o: 0 }); show(box, m('rule'), .4);
+    text(p, 'одно сложение — два вычитания', 800, 780, m('rule', .3), { size: 30, fill: COL.good, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    c07_row(p, [['30', TEN], [' + ', CH], ['5', ONE], [' = ', CH], ...c07_n(35)], 120, 300, .3, 46, 'start');
+    c07_row(p, [...c07_n(35), [' − ', CH], ['5', ONE], [' = ', CH], ['30', TEN]], 120, 380, .4, 46, 'start');
+    c07_row(p, [...c07_n(35), [' − ', CH], ['30', TEN], [' = ', CH], ['5', ONE]], 120, 460, .5, 46, 'start');
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-calc', prompt: ['Вычисли.'],
+    build: blanks([
+      { parts: ['40 + 3 = ', { box: '43' }], why: '4 десятка и 3 единицы — это 43.', hint: '40 — это 4 десятка, 3 — это 3 единицы. Запиши их рядом.' },
+      { parts: ['57 − 7 = ', { box: '50' }], why: 'Убрали 7 единиц — остались 5 десятков: 50.', hint: 'В числе 57 — 5 десятков и 7 единиц. Убери единицы.' },
+      { parts: ['24 − 20 = ', { box: '4' }], why: 'Убрали 2 десятка — остались 4 единицы.', hint: '20 — это все десятки числа 24. Что останется?' },
+      { parts: ['6 + 70 = ', { box: '76' }], why: '7 десятков и 6 единиц — это 76.', hint: 'Сколько здесь десятков? А единиц?' },
+      { parts: ['39 − 30 = ', { box: '9' }], why: 'Убрали 3 десятка — остались 9 единиц.', hint: 'В числе 39 — 3 десятка. Убери их.' },
+      { parts: ['19 − 9 = ', { box: '10' }], why: 'Убрали 9 единиц — остался 1 десяток: 10.', hint: 'В числе 19 — 1 десяток и 9 единиц. Убери единицы.' },
+    ]),
+  }], done) }],
+
+  ['trap', 'Не путай десятки с единицами', (m) => {
+    const p = panel(0);
+    const q = c07_row(p, [['40', TEN], [' + ', CH], ['3', ONE], [' = ?', CH]], 420, 200, .3, 84);
+    const bad = c07_row(p, [['40 + 3 = 70', COL.bad]], 1180, 200, m('wrong'), 72);
+    draw(path(p, `M${1180 - bad._w / 2 - 10} 205L${1180 + bad._w / 2 + 10} 160`, { stroke: COL.bad, 'stroke-width': 6 }, { d: 0 }), m('wrong', 2), .4);
+    text(p, '4 + 3 = 7?', 1180, 260, m('wrong', .8), { size: 30, fill: COL.bad, anchor: 'middle' });
+    text(p, '4 дес.', q._xs[0], 270, m('why'), { size: 34, fill: TEN, anchor: 'middle', weight: 700 });
+    text(p, '3 ед.', q._xs[2], 270, m('why', 1.2), { size: 34, fill: ONE, anchor: 'middle', weight: 700 });
+    const y = 360, H = 130;
+    [560, 675, 790, 905].forEach((x, i) => show(uBundle(p, x, y, TEN, H), m('sticks', i * .2), .4));
+    [995, 1040, 1085].forEach((x, i) => show(uStick(p, x, y, ONE, H), m('sticks', .9 + i * .2), .4));
+    uBracket(p, 510, 955, y + H + 26, '40', TEN, m('sticks', .5), { size: 34 });
+    uBracket(p, 975, 1105, y + H + 26, '3', ONE, m('sticks', 1.4), { size: 34 });
+    c07_row(p, [['40', TEN], [' + ', CH], ['3', ONE], [' = ', CH], ...c07_n(43)], 800, 720, m('right'), 84);
+    draw(path(p, 'M1080 690l20 22l40 -50', { stroke: COL.good, 'stroke-width': 7 }, { d: 0 }), m('right', 1), .4);
+  }],
+
+  ['split', 'Разрядные слагаемые', (m) => {
+    const p = panel(0);
+    const y = 130;
+    const c30 = c07_card(p, [['3', TEN], ['0', TEN]], 760, y, TEN);
+    show(c30, .3, .4);
+    pulse(c30, m('card30'), 1.08);
+    const c6 = c07_card(p, [['6', ONE]], 1300, y, ONE);
+    show(c6, m('card6'), .4);
+    tw(c6, { x: 860 }, m('stack'), .9, io);
+    pulse(c6, m('stack', 1), 1.1);
+    tw(c6, { x: 1120 }, m('apart'), .9, io);
+    mline(p, '+', 1040, 225, m('apart', .7), CH, 84);
+    const c36 = c07_card(p, [['3', TEN], ['6', ONE]], 380, y, CH);
+    show(c36, m('eq'), .5);
+    mline(p, '=', 670, 225, m('eq', .3), CH, 84);
+    uBracket(p, 760, 1220, 300, 'разрядные слагаемые', COL.good, m('name'), { size: 38 });
+    text(p, 'десятки', 860, 110, m('name', 1.6), { size: 30, fill: TEN, anchor: 'middle', weight: 600 });
+    text(p, 'единицы', 1170, 110, m('name', 2.2), { size: 30, fill: ONE, anchor: 'middle', weight: 600 });
+    c07_row(p, [...c07_n(47), [' = ', CH], ['40', TEN], [' + ', CH], ['7', ONE]], 800, 500, m('more'), 84);
+    const by = 570, H = 110;
+    [495, 605, 715, 825].forEach((x, i) => show(uBundle(p, x, by, TEN, H), m('more', .4 + i * .1), .4));
+    [905, 945, 985, 1025, 1065, 1105, 1145].forEach((x, i) => show(uStick(p, x, by, ONE, H), m('more', .9 + i * .08), .4));
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    c07_row(p, [...c07_n(36), [' = ', CH], ['30', TEN], [' + ', CH], ['6', ONE]], 120, 300, .3, 50, 'start');
+    c07_row(p, [...c07_n(47), [' = ', CH], ['40', TEN], [' + ', CH], ['7', ONE]], 120, 380, .4, 50, 'start');
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-split', prompt: ['Разложи числа на разрядные слагаемые.'],
+    build: blanks([
+      { parts: ['37 = 30 + ', { box: '7' }], why: 'В числе 37 — 3 десятка и 7 единиц.', hint: 'Десятки уже записаны: 30. Сколько единиц?' },
+      { parts: ['84 = ', { box: '80' }, ' + 4'], why: '8 десятков — это 80, и 4 единицы.', hint: 'Первая цифра 8 — это 8 десятков. Сколько это?' },
+      { parts: ['56 = ', { box: '50' }, ' + ', { box: '6' }], why: '56 = 50 + 6: пять десятков и шесть единиц.', hint: 'Сначала десятки (с нулём на конце), потом единицы.' },
+      { parts: ['65 = ', { box: '60' }, ' + ', { box: '5' }], why: '65 = 60 + 5: шесть десятков и пять единиц.', hint: 'В числе 65 — 6 десятков. Это 60, а не 6.' },
+      { parts: ['29 = ', { box: '20' }, ' + 9'], why: '2 десятка — это 20, и 9 единиц.', hint: 'Единицы уже записаны: 9. Сколько в числе десятков?' },
+    ]),
+  }], done) }],
+
+  ['length', 'Длина в дециметрах и сантиметрах', (m) => {
+    const p = panel(0);
+    const U = 26, x0 = 190, y = 300, h = 70;   // 26 px for 1 cm: drawn smaller
+    const dms = [], cms = [];
+    for (let i = 0; i < 4; i++) {
+      const g = G(p, { o: 0 });
+      g.setAttribute('fill', COL.dim);
+      mk('rect', { x: x0 + i * 10 * U + 1, y, width: 10 * U - 2, height: h, rx: 3, 'fill-opacity': .55 }, g);
+      let d = '';
+      for (let k = 1; k < 10; k++) d += `M${x0 + (i * 10 + k) * U} ${y}v${k === 5 ? 22 : 14}`;
+      path(g, d, { stroke: COL.board, 'stroke-width': 2 });
+      show(g, .3, .5); dms.push(g);
+    }
+    for (let i = 0; i < 7; i++) {
+      const g = G(p, { o: 0 });
+      g.setAttribute('fill', COL.dim);
+      mk('rect', { x: x0 + (40 + i) * U + 1, y, width: U - 2, height: h, rx: 2, 'fill-opacity': .55 }, g);
+      show(g, .3, .5); cms.push(g);
+    }
+    text(p, 'нарисовано мельче', x0 + 47 * U, 200, .4, { size: 24, fill: COL.faint, anchor: 'end' });
+    uBracket(p, x0, x0 + 47 * U, y - 16, '47 см', CH, m('strip'), { up: true, size: 38 });
+    dms.forEach((g, i) => {
+      tw(g, { c_fill: TEN }, m('dm', i * .3), .4);
+      text(p, '1 дм', x0 + (i * 10 + 5) * U, y + h - 18, m('dm', i * .3 + .2), { size: 26, fill: COL.board, anchor: 'middle', weight: 700 });
+    });
+    uBracket(p, x0, x0 + 40 * U, y + h + 16, '4 дм = 40 см', TEN, m('dm', 1.4), { size: 34 });
+    cms.forEach((g, i) => tw(g, { c_fill: ONE }, m('cm', i * .12), .3));
+    uBracket(p, x0 + 40 * U, x0 + 47 * U, y + h + 16, '7 см', ONE, m('cm', .9), { size: 34 });
+    c07_row(p, [...c07_n(47), [' см = ', CH], ['40 см', TEN], [' + ', CH], ['7 см', ONE]], 800, 610, m('eq'), 64);
+    c07_row(p, [...c07_n(47), [' см = ', CH], ['4 дм', TEN], [' ', CH], ['7 см', ONE]], 800, 720, m('eq2'), 64);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    mline(p, '1 дм = 10 см', 120, 300, .3, TEN, 46, 'start');
+    c07_row(p, [...c07_n(47), [' см = ', CH], ['4 дм', TEN], [' ', CH], ['7 см', ONE]], 120, 380, .4, 46, 'start');
+  }, { ask: done => quiz({ x: 560, y: 70, w: 960, cls: 'side' }, [{
+    id: 'c-length', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['4 дм 7 см = ', { box: '47' }, ' см'], why: '4 дм = 40 см, и ещё 7 см: 47 см.', hint: 'Переведи дециметры в сантиметры: 1 дм = 10 см.' },
+      { parts: ['63 см = ', { box: '6' }, ' дм ', { box: '3' }, ' см'], why: '63 = 60 + 3, а 60 см = 6 дм.', hint: 'Разложи 63 на разрядные слагаемые: 60 + 3.' },
+      { parts: ['85 см = 80 см + ', { box: '5' }, ' см'], why: '85 = 80 + 5.', hint: 'Сколько единиц в числе 85?' },
+      { parts: ['2 дм 9 см = ', { box: '29' }, ' см'], why: '2 дм = 20 см, и 9 см: 29 см.', hint: 'Сколько сантиметров в 2 дм?' },
+      { parts: ['70 см + 5 см = ', { box: '75' }, ' см'], why: '7 десятков и 5 единиц — 75.', hint: '70 — это десятки, 5 — единицы.' },
+    ]),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['30 + 5 = 35', 'w1', true],
+     ['35 − 5 = 30      35 − 30 = 5', 'w2', true],
+     ['47 = 40 + 7 — разрядные слагаемые', 'w3', false],
+     ['Десятки с единицами не складывают: 40 + 3 = 43.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-windows', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['59 − ', { box: '9' }, ' = 50'], why: 'Из 59 убрали единицы — остались 5 десятков.', hint: 'Сколько единиц в числе 59?' },
+      { parts: [{ box: '8' }, ' + 40 = 48'], why: '48 = 40 + 8.', hint: 'Разложи 48 на разрядные слагаемые.' },
+      { parts: ['83 − ', { box: '80' }, ' = 3'], why: 'Из 83 убрали все десятки — 80, осталось 3.', hint: 'Осталось только 3 единицы. Значит, убрали все десятки.' },
+      { parts: ['90 + ', { box: '6' }, ' = 96'], why: '96 = 90 + 6.', hint: 'Сколько единиц в числе 96?' },
+      { parts: [{ box: '66' }, ' − 60 = 6'], why: '66 − 60 = 6: шесть десятков и шесть единиц.', hint: 'Какое число состоит из 6 десятков и 6 единиц?' },
+      { parts: [{ box: '45' }, ' − 40 = 5'], why: '45 − 40 = 5.', hint: 'Сложи 40 и 5.' },
+      { parts: ['75 = 70 + ', { box: '5' }], why: '75 — это 7 десятков и 5 единиц.', hint: 'Сколько единиц в числе 75?' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-stickers', prompt: ['У Маши был лист с 30 наклейками и ещё 5 отдельных наклеек. Весь лист она подарила подруге. Сколько наклеек осталось у Маши?'],
+    build: choice([['5 наклеек'], ['32 наклейки'], ['30 наклеек']], 0,
+      'Было 30 + 5 = 35 наклеек. Подарила 30: 35 − 30 = 5.',
+      [null, 'Подарила 30 наклеек, а не 3. Ушли все три десятка: 35 − 30 = 5.',
+       'Так было бы, если бы Маша подарила 5 отдельных наклеек. А она подарила лист — 30 наклеек: 35 − 30 = 5.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

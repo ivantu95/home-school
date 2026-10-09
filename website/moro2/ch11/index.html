@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сумма и разность отрезков</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 11, title: 'Сумма и разность отрезков', minutes: 8, language: 'ru', next: '../ch12/' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: the whole (segment and the arc under it) — COL.whole; one part — COL.task; the other part — COL.irr.
+const PART1 = COL.task, PART2 = COL.irr, WHOLE = COL.whole;
+// A segment from x1 to x2 at height y, drawn on at t0, with its two end points.
+function c11_seg(p, x1, x2, y, colr, t0, { w = 8, dots = true } = {}) {
+  const l = path(p, `M${x1} ${y}H${x2}`, { stroke: colr, 'stroke-width': w }, { d: 0 });
+  draw(l, t0, .6);
+  if (dots) [x1, x2].forEach((x, i) => c11_dot(p, x, y, t0 + i * .5));
+  return l;
+}
+// A single point on a segment.
+// Points are moved to the end of their group once the beat is built, so segments drawn later never cover them.
+function c11_dot(p, x, y, t0, r = 8) {
+  const d = mk('circle', { cx: 0, cy: 0, r, fill: COL.chalk }, p); put(d, { x, y, o: 0, s: .4 }); pop(d, t0);
+  queueMicrotask(() => d.parentNode && d.parentNode.appendChild(d));
+  return d;
+}
+// A curved arc over (up) or under a stretch of a segment, with its label. Returns the label (text can be swapped later).
+function c11_arc(p, x1, x2, y, up, label, colr, t0, { size = 32 } = {}) {
+  const h = Math.min(90, (x2 - x1) * .3), k = up ? -1 : 1;
+  draw(path(p, `M${x1} ${y}Q${(x1 + x2) / 2} ${y + k * h} ${x2} ${y}`, { stroke: colr, 'stroke-width': 3 }, { d: 0 }), t0, .5);
+  const t = T(p, label, { x: (x1 + x2) / 2, y: up ? y - h / 2 - 16 : y + h / 2 + 40, size, fill: colr, weight: 700, anchor: 'middle', o: 0 });
+  show(t, t0 + .3);
+  return t;
+}
+// Replace a label's text at t0 (deterministic for seeking) with a small pulse.
+function c11_swap(e, str, t0) {
+  const old = e.textContent;
+  prog(q => { e.textContent = q < 1 ? old : str; }, t0, .01, lin);
+  pulse(e, t0, 1.25);
+}
+// A red crossing-out line drawn over a wrong record.
+const c11_cross = (p, x1, y1, x2, y2, t0) => draw(path(p, `M${x1} ${y1}L${x2} ${y2}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), t0, .4);
+// A dashed vertical guide.
+function c11_dash(p, x, y1, y2, t0) { const d = path(p, `M${x} ${y1}V${y2}`, { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 6' }); put(d, { o: 0 }); show(d, t0); return d; }
+// A small car, centred at (x, y) (y = wheel axis).
+function c11_car(p, x, y, colr) {
+  const g = G(p, { x, y, o: 0 });
+  path(g, 'M-30 -22L-18 -44H18L30 -22', { stroke: COL.chalk, 'stroke-width': 3, fill: colr, 'fill-opacity': .35 });
+  mk('rect', { x: -50, y: -24, width: 100, height: 26, rx: 9, fill: colr, stroke: COL.chalk, 'stroke-width': 2.5 }, g);
+  for (const dx of [-27, 27]) mk('circle', { cx: dx, cy: 4, r: 11, fill: COL.board, stroke: COL.chalk, 'stroke-width': 3 }, g);
+  return g;
+}
+// A horizontal bar (for weights and ages): x1..x2 at top y, height h.
+function c11_bar(p, x1, x2, y, colr, label, { h = 50, op = .6 } = {}) {
+  const g = G(p, { o: 0 });
+  mk('rect', { x: x1 + 1, y, width: x2 - x1 - 2, height: h, rx: 4, fill: colr, 'fill-opacity': op, stroke: colr, 'stroke-width': 2 }, g);
+  if (label) T(g, label, { x: (x1 + x2) / 2, y: y + h / 2 + 10, size: 28, fill: COL.board, weight: 700, anchor: 'middle' });
+  return g;
+}
+// A square bracket under x1..x2 at y with a label; returns the label.
+function c11_brk(p, x1, x2, y, label, colr, t0) {
+  draw(path(p, `M${x1} ${y - 12}V${y}H${x2}V${y - 12}`, { stroke: colr, 'stroke-width': 3.5 }, { d: 0 }), t0, .5);
+  const t = T(p, label, { x: (x1 + x2) / 2, y: y + 40, size: 34, fill: colr, weight: 700, anchor: 'middle', o: 0 });
+  show(t, t0 + .3);
+  return t;
+}
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Сумма и разность отрезков', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 11', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Сумма и разность отрезков', { x: 800, y: 440, size: 84, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'отрезки помогают решать задачи', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['sum', 'Складываем отрезки', (m) => {
+    const p = panel(0);
+    const U = 120, X0 = 320, Y = 300;
+    c11_seg(p, X0, X0 + 6 * U, Y, PART1, .2);
+    c11_arc(p, X0, X0 + 6 * U, Y, true, '6 см', PART1, .5);
+    // the second segment comes in below and is then laid on the end of the first
+    const b = G(p, { x: -560, y: 170 });
+    c11_seg(b, X0 + 6 * U, X0 + 8 * U, Y, PART2, m('b'));
+    c11_arc(b, X0 + 6 * U, X0 + 8 * U, Y, true, '2 см', PART2, m('b', .3));
+    tw(b, { x: 0, y: 0 }, m('join'), 1, io);
+    const q = c11_arc(p, X0, X0 + 8 * U, Y, false, '?', WHOLE, m('whole'), { size: 36 });
+    pulse(q, m('whole', .8), 1.4);
+    mline(p, '6 + 2 = 8 (см)', 800, 520, m('add'), COL.chalk, 52);
+    c11_swap(q, '8 см', m('add', 1.2));
+    const R = uRuler(p, X0, 590, U, 8, { mm: false });
+    show(R.g, m('check'), .6);
+    c11_dash(p, X0, Y + 10, 590, m('check', .4)); c11_dash(p, X0 + 8 * U, Y + 10, 590, m('check', .4));
+    text(p, 'Длина целого отрезка = сумма длин его частей', 800, 790, m('rule'), { size: 36, fill: WHOLE, anchor: 'middle', weight: 600 });
+  }],
+
+  ['diff', 'Разность отрезков', (m) => {
+    const p = panel(0);
+    const U = 110, X0 = 250, Y = 300, xp = X0 + 4 * U;
+    c11_seg(p, X0, X0 + 10 * U, Y, WHOLE, .2);
+    c11_arc(p, X0, X0 + 10 * U, Y, false, '10 см', WHOLE, m('w'), { size: 36 });
+    c11_dot(p, xp, Y, m('pt'), 10);
+    c11_seg(p, X0, xp, Y, PART1, m('pt', .2), { dots: false });
+    c11_arc(p, X0, xp, Y, true, '4 см', PART1, m('pt', .6));
+    c11_seg(p, xp, X0 + 10 * U, Y, PART2, m('two'), { dots: false });
+    const q = c11_arc(p, xp, X0 + 10 * U, Y, true, '?', PART2, m('two', .5), { size: 36 });
+    const wr = mline(p, '10 + 4 = 14', 800, 520, m('wrong'), COL.bad, 52);
+    c11_cross(p, 640, 535, 960, 480, m('wrong', 1.2));
+    hide(wr, m('sub'), .3); hide(p.lastChild, m('sub'), .3);
+    mline(p, '10 − 4 = 6 (см)', 800, 520, m('sub', .3), COL.chalk, 52);
+    c11_swap(q, '6 см', m('sub', 2));
+    const R = uRuler(p, X0, 590, U, 10, { mm: false });
+    show(R.g, m('check'), .6);
+    c11_dash(p, xp, Y + 10, 590, m('check', .4)); c11_dash(p, X0 + 10 * U, Y + 10, 590, m('check', .4));
+    text(p, 'Часть = целое − другая часть', 800, 790, m('rule'), { size: 38, fill: COL.chalk, anchor: 'middle', weight: 600 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    const U = 60, Y = 270;
+    text(p, '1)', 70, Y + 10, .2, { size: 34, fill: COL.dim, weight: 700 });
+    c11_dot(p, 140, Y, .2);
+    c11_seg(p, 140, 140 + 5 * U, Y, PART1, .2, { dots: false });
+    c11_seg(p, 140 + 5 * U, 140 + 8 * U, Y, PART2, .2);
+    c11_arc(p, 140, 140 + 5 * U, Y, true, '5 см', PART1, .3);
+    c11_arc(p, 140 + 5 * U, 140 + 8 * U, Y, true, '3 см', PART2, .3);
+    c11_arc(p, 140, 140 + 8 * U, Y, false, '?', WHOLE, .4);
+    text(p, '2)', 830, Y + 10, .2, { size: 34, fill: COL.dim, weight: 700 });
+    c11_seg(p, 900, 900 + 9 * U, Y, WHOLE, .2);
+    c11_seg(p, 900, 900 + 3 * U, Y, PART1, .3, { dots: false });
+    c11_seg(p, 900 + 3 * U, 900 + 9 * U, Y, PART2, .3, { dots: false });
+    c11_arc(p, 900, 900 + 3 * U, Y, true, '3 см', PART1, .4);
+    c11_arc(p, 900 + 3 * U, 900 + 9 * U, Y, true, '?', PART2, .4);
+    c11_arc(p, 900, 900 + 9 * U, Y, false, '9 см', WHOLE, .4);
+  }, { ask: done => quiz({ x: 200, y: 450, w: 1200, cls: 'side' }, [{
+    id: 'c-segs', prompt: ['Найди длины, которые на чертежах обозначены знаком «?».'],
+    build: blanks([
+      { parts: ['1)  5 см + 3 см = ', { box: '8' }, ' см'], why: 'Отрезки приложены один за другим: длины складываем, 5 + 3 = 8.', hint: 'Целый отрезок состоит из двух частей. Сложи их длины.' },
+      { parts: ['2)  9 см − 3 см = ', { box: '6' }, ' см'], why: 'Известны целое и одна часть: 9 − 3 = 6.', hint: 'Неизвестна часть. Из целого вычти другую часть.' },
+    ]),
+  }], done) }],
+
+  ['cars', 'Задача про стоянку', (m) => {
+    const p = panel(0);
+    const lot = G(p, { o: 0 });
+    path(lot, 'M150 160H1320V320H150Z', { stroke: COL.faint, 'stroke-width': 3, 'stroke-dasharray': '10 8' });
+    mk('circle', { cx: 1400, cy: 200, r: 34, fill: WHOLE, 'fill-opacity': .3, stroke: WHOLE, 'stroke-width': 3 }, lot);
+    T(lot, 'P', { x: 1400, y: 214, size: 40, fill: COL.chalk, weight: 700, anchor: 'middle' });
+    path(lot, 'M1400 234V320', { stroke: COL.chalk, 'stroke-width': 4 });
+    show(lot, .2);
+    const cars = Array.from({ length: 9 }, (_, i) => c11_car(p, 230 + i * 125, 280, i < 6 ? PART1 : PART2));
+    cars.forEach((c, i) => show(c, m('park', .2 + i * .08), .4));
+    cars.slice(6).forEach((c, i) => { tw(c, { x: st(c).x + 520 }, m('go', .2 + i * .2), 1.2, io); hide(c, m('go', .8 + i * .2), .6); });
+    const n6 = text(p, 'осталось 6', 540, 375, m('left'), { size: 30, fill: PART1, anchor: 'middle', weight: 600 });
+    const q = text(p, 'было — ?', 1100, 375, m('ask'), { size: 30, fill: WHOLE, anchor: 'middle', weight: 600 });
+    void n6; void q;
+    const U = 90, x0 = 395, Y = 600;
+    c11_seg(p, x0, x0 + 9 * U, Y, WHOLE, m('seg'));
+    c11_seg(p, x0, x0 + 6 * U, Y, PART1, m('p6'), { dots: false });
+    c11_arc(p, x0, x0 + 6 * U, Y, true, '6 маш.', PART1, m('p6', .3));
+    text(p, 'осталось', x0 + 3 * U, Y - 105, m('p6', .6), { size: 24, fill: COL.dim, anchor: 'middle' });
+    c11_seg(p, x0 + 6 * U, x0 + 9 * U, Y, PART2, m('p3'), { dots: false });
+    c11_arc(p, x0 + 6 * U, x0 + 9 * U, Y, true, '3 маш.', PART2, m('p3', .3));
+    text(p, 'уехали', x0 + 7.5 * U, Y - 105, m('p3', .6), { size: 24, fill: COL.dim, anchor: 'middle' });
+    const w = c11_arc(p, x0, x0 + 9 * U, Y, false, '?', WHOLE, m('q'), { size: 40 });
+    text(p, 'было', x0 + 4.5 * U, Y + 130, m('q', .5), { size: 24, fill: COL.dim, anchor: 'middle' });
+    pulse(w, m('q', 1.5), 1.4);
+  }],
+
+  ['solve', 'Решаем задачу', (m) => {
+    const p = panel(0);
+    const box = G(p, { o: 0 });
+    path(box, 'M110 120H640V360H110Z', { stroke: WHOLE, 'stroke-width': 3 });
+    show(box, .2);
+    text(p, 'Было — ?', 150, 190, m('r1'), { size: 38, fill: WHOLE, weight: 600 });
+    text(p, 'Уехали — 3 маш.', 150, 260, m('r2'), { size: 38, fill: PART2, weight: 600 });
+    text(p, 'Осталось — 6 маш.', 150, 330, m('r3'), { size: 38, fill: PART1, weight: 600 });
+    const U = 60, x0 = 860, Y = 250;
+    c11_seg(p, x0, x0 + 6 * U, Y, PART1, .3);
+    c11_seg(p, x0 + 6 * U, x0 + 9 * U, Y, PART2, .3);
+    c11_arc(p, x0, x0 + 6 * U, Y, true, '6 маш.', PART1, .4, { size: 28 });
+    c11_arc(p, x0 + 6 * U, x0 + 9 * U, Y, true, '3 маш.', PART2, .4, { size: 28 });
+    const q = c11_arc(p, x0, x0 + 9 * U, Y, false, '?', WHOLE, .5, { size: 36 });
+    const wr = mline(p, '6 − 3 = 3', 800, 500, m('wrong', 1.2), COL.bad, 56);
+    c11_cross(p, 660, 515, 940, 455, m('wrong', 4.2));
+    const cr = p.lastChild;
+    pulse(q, m('look', .2), 1.6);
+    hide(wr, m('add'), .3); hide(cr, m('add'), .3);
+    mline(p, '6 + 3 = 9 (маш.)', 800, 500, m('add', .5), COL.chalk, 56);
+    c11_swap(q, '9 маш.', m('add', 2.5));
+    text(p, 'Ответ: было 9 машин.', 800, 600, m('ans'), { size: 42, fill: COL.good, anchor: 'middle', weight: 700 });
+    text(p, 'Проверка:', 560, 720, m('check'), { size: 32, fill: COL.dim, anchor: 'end' });
+    mline(p, '9 − 3 = 6', 600, 720, m('check', .3), COL.dim, 44, 'start');
+    text(p, '✓', 830, 720, m('check', 2.5), { size: 44, fill: COL.good, weight: 700 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const U = 45, Y = 720;
+    // scheme 1 (left): whole 7, part 4, other part unknown — does not fit
+    const g1 = G(p), x1 = 300;
+    c11_dot(g1, x1, Y, .2);
+    c11_seg(g1, x1, x1 + 4 * U, Y, PART2, .2, { dots: false });
+    c11_seg(g1, x1 + 4 * U, x1 + 7 * U, Y, PART1, .2);
+    c11_arc(g1, x1, x1 + 4 * U, Y, true, '4 ящ.', PART2, .3, { size: 28 });
+    c11_arc(g1, x1 + 4 * U, x1 + 7 * U, Y, true, '?', PART1, .3, { size: 28 });
+    c11_arc(g1, x1, x1 + 7 * U, Y, false, '7 ящ.', WHOLE, .3, { size: 32 });
+    // scheme 2 (right): parts 4 and 7, whole unknown — fits
+    const g2 = G(p), x2 = 850;
+    c11_dot(g2, x2, Y, .4);
+    c11_seg(g2, x2, x2 + 4 * U, Y, PART2, .4, { dots: false });
+    c11_seg(g2, x2 + 4 * U, x2 + 11 * U, Y, PART1, .4);
+    c11_arc(g2, x2, x2 + 4 * U, Y, true, '4 ящ.', PART2, .5, { size: 28 });
+    c11_arc(g2, x2 + 4 * U, x2 + 11 * U, Y, true, '7 ящ.', PART1, .5, { size: 28 });
+    c11_arc(g2, x2, x2 + 11 * U, Y, false, '?', WHOLE, .5, { size: 32 });
+    S.c11s = [g1, g2];
+  }, { ask: done => quiz({ x: 200, y: 50, w: 1200, cls: 'side' }, [{
+    id: 'c-scheme', prompt: ['У продавца было несколько ящиков с помидорами. Он продал 4 ящика, и осталось 7. Сколько ящиков было сначала? Щёлкни по чертежу, который подходит к задаче.'],
+    build: pickEls([
+      { box: [250, 610, 415, 230], el: S.c11s[0], label: 'Чертёж слева' },
+      { box: [800, 610, 595, 230], el: S.c11s[1], label: 'Чертёж справа' },
+    ], 1,
+      'Продали 4 ящика и осталось 7 — это две части. Было — целое, оно неизвестно: 4 + 7 = 11 ящиков.',
+      () => 'На этом чертеже 7 ящиков — целое. Но 7 ящиков осталось, это только часть того, что было.'),
+  }], done) }],
+
+  ['part', 'Неизвестная часть', (m) => {
+    const p = panel(0);
+    const U = 60, x0 = 320, Y = 300, xa = x0 + 10 * U, x1 = x0 + 16 * U;
+    c11_seg(p, x0, x1, Y, WHOLE, m('all'));
+    c11_arc(p, x0, x1, Y, false, '16 кг', WHOLE, m('all', .4), { size: 36 });
+    text(p, 'фрукты', 800, Y + 130, m('all', .8), { size: 26, fill: COL.dim, anchor: 'middle' });
+    c11_seg(p, x0, xa, Y, PART1, m('ap'), { dots: false });
+    c11_arc(p, x0, xa, Y, true, '10 кг', PART1, m('ap', .3));
+    text(p, 'яблоки', (x0 + xa) / 2, Y - 105, m('ap', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    c11_dot(p, xa, Y, m('ap', .2));
+    c11_seg(p, xa, x1, Y, PART2, m('pe'), { dots: false });
+    const q = c11_arc(p, xa, x1, Y, true, '?', PART2, m('pe', .3), { size: 36 });
+    text(p, 'груши', (xa + x1) / 2, Y - 105, m('pe', .6), { size: 26, fill: COL.dim, anchor: 'middle' });
+    pulse(q, m('look', .8), 1.5);
+    mline(p, '16 − 10 = 6 (кг)', 800, 530, m('sub'), COL.chalk, 52);
+    c11_swap(q, '6 кг', m('sub', 2.2));
+    text(p, 'Ответ: 6 кг груш.', 800, 620, m('ans'), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+    const rb = G(p, { o: 0 });
+    path(rb, 'M330 680H1270V850H330Z', { stroke: COL.faint, 'stroke-width': 2 });
+    show(rb, m('rule'));
+    mline(p, 'целое = часть + часть', 800, 745, m('rule', .2), WHOLE, 44);
+    mline(p, 'часть = целое − другая часть', 800, 820, m('rule', 2.5), COL.chalk, 44);
+  }],
+
+  ['q3', 'Проверь себя', () => {
+    const p = panel(0);
+    const Y = 220;
+    c11_dot(p, 440, Y, .2);
+    c11_seg(p, 440, 880, Y, PART1, .2, { dots: false });
+    c11_seg(p, 880, 1160, Y, PART2, .2);
+    c11_arc(p, 440, 880, Y, true, 'часть', PART1, .3, { size: 28 });
+    c11_arc(p, 880, 1160, Y, true, 'часть', PART2, .3, { size: 28 });
+    c11_arc(p, 440, 1160, Y, false, 'целое', WHOLE, .4, { size: 28 });
+  }, { ask: done => quiz({ x: 200, y: 350, w: 1200, cls: 'side' }, [{
+    id: 'c-whole-part', prompt: ['Найди целое или часть.'],
+    build: blanks([
+      { parts: ['Части 8 см и 5 см. Целое — ', { box: '13' }, ' см'], why: 'Целое — сумма частей: 8 + 5 = 13.', hint: 'Известны обе части. Целое — это часть плюс часть.' },
+      { parts: ['Целое 15 кг, часть 9 кг. Другая часть — ', { box: '6' }, ' кг'], why: 'Часть — это целое минус другая часть: 15 − 9 = 6.', hint: 'Неизвестна часть: из целого вычти известную часть.' },
+      { parts: ['Целое 14, часть 6. Другая часть — ', { box: '8' }], why: '14 − 6 = 8.', hint: 'Из 14 вычти 6.' },
+    ]),
+  }], done) }],
+
+  ['chain', 'Утка, гусь и щенок', (m) => {
+    const p = panel(0);
+    const x0 = 380, U = 100, xd = x0 + 4 * U, xg = xd + 2 * U, xp = xg + 3 * U;
+    const rows = [['утка', 160, 'duck'], ['гусь', 280, 'goose'], ['щенок', 400, 'pup']];
+    rows.forEach(([name, y, mark]) => text(p, name, x0 - 30, y + 36, m(mark), { size: 34, anchor: 'end', weight: 600 }));
+    const base = (x2, y, t0) => { const b = c11_bar(p, x0, x2, y, COL.chalk, null, { op: .22 }); tw(b, { o: 1 }, t0, .5); };
+    base(xd, 160, m('duck', .2));
+    base(xd, 280, m('goose', .2)); const g2 = c11_bar(p, xd, xg, 280, PART1, '2 кг'); show(g2, m('goose', 1));
+    c11_dash(p, xd, 150, 470, m('goose', .6));
+    base(xg, 400, m('pup', .2)); const p3 = c11_bar(p, xg, xp, 400, PART2, '3 кг'); show(p3, m('pup', 1));
+    c11_dash(p, xg, 270, 470, m('pup', .6));
+    const q = c11_brk(p, xd, xp, 500, '?', COL.good, m('ask'));
+    const wr = mline(p, '3 − 2 = 1', 800, 650, m('wrong'), COL.bad, 52);
+    c11_cross(p, 680, 662, 920, 612, m('wrong', 1.2));
+    const cr = p.lastChild;
+    hide(wr, m('look'), .3); hide(cr, m('look'), .3);
+    pulse(g2, m('look', 1.5), 1.05); pulse(p3, m('look', 2.6), 1.05);
+    mline(p, '2 + 3 = 5 (кг)', 800, 650, m('add'), COL.chalk, 52);
+    c11_swap(q, '5 кг', m('add', 1.5));
+    text(p, 'Утка легче щенка на 5 кг.', 800, 760, m('ans'), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q4', 'Проверь себя', () => {
+    const p = panel(0);
+    const x0 = 420, U = 100, xv = x0 + 4 * U, xs = xv + 3 * U, xa = xs + 2 * U;
+    [['Вадим', 560], ['Саша', 650], ['Андрей', 740]].forEach(([n, y]) => text(p, n, x0 - 25, y + 34, .2, { size: 30, anchor: 'end', weight: 600 }));
+    [[xv, 560], [xv, 650], [xs, 740]].forEach(([x2, y]) => show(c11_bar(p, x0, x2, y, COL.chalk, null, { h: 46, op: .22 }), .3));
+    show(c11_bar(p, xv, xs, 650, PART1, '3 г.', { h: 46 }), .4);
+    show(c11_bar(p, xs, xa, 740, PART2, '2 г.', { h: 46 }), .5);
+  }, { ask: done => quiz({ x: 200, y: 40, w: 1200, cls: 'side' }, [{
+    id: 'c-ages', prompt: ['Андрей на 2 года старше Саши, а Саша на 3 года старше Вадима. На сколько лет Вадим младше Андрея?'],
+    build: choice([['На 5 лет'], ['На 1 год'], ['На 2 года']], 0,
+      'Андрей старше Вадима и на 3 года, и ещё на 2: 3 + 2 = 5 лет.',
+      [null, 'Вычитать здесь не нужно. Посмотри на чертёж: разницы 3 года и 2 года стоят одна за другой — их складывают.',
+       '2 года — это разница между Андреем и Сашей. А Вадим младше Саши ещё на 3 года.']),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Отрезки складывают, прикладывая один за другим.', 'w1', false],
+     ['целое = часть + часть', 'w2', true],
+     ['часть = целое − другая часть', 'w3', true],
+     ['Чертёж подскажет, складывать или вычитать.', 'w4', false]].forEach(([str, mark, big], i) => {
+      const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: big ? 44 : 34, weight: 600, font: big ? MATH : UI });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-segs', prompt: ['Заполни окошки.'],
+    build: blanks([
+      { parts: ['Отрезки 7 см и 6 см приложили один за другим: ', { box: '13' }, ' см'], why: '7 + 6 = 13 см.', hint: 'Длина целого отрезка — сумма длин частей.' },
+      { parts: ['Отрезок 12 см разделили точкой. Одна часть 4 см, другая — ', { box: '8' }, ' см'], why: '12 − 4 = 8 см.', hint: 'Из целого вычти известную часть.' },
+      { parts: ['Самый длинный отрезок 9 см, одна часть 4 см, другая — ', { box: '5' }, ' см'], why: '9 − 4 = 5 см.', hint: 'Самый длинный отрезок — это целое.' },
+      { parts: ['Съели 5 яблок, осталось 9. Было ', { box: '14' }, ' яблок'], why: 'Было — целое: 9 + 5 = 14.', hint: 'Неизвестно, сколько было, — это целое. Сложи части.' },
+      { parts: ['В классе 17 учеников, из них 9 девочек. Мальчиков — ', { box: '8' }], why: '17 − 9 = 8.', hint: 'Все ученики — целое, девочки — часть.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-barrel', prompt: ['Из бочки взяли 8 вёдер воды, и в ней осталось 10 вёдер. Сколько вёдер воды было в бочке?'],
+    build: choice([['18 вёдер'], ['2 ведра'], ['10 вёдер']], 0,
+      'Было — целое, а «взяли» и «осталось» — его части: 8 + 10 = 18 вёдер.',
+      [null, 'Слово «взяли» сбивает. Но неизвестно, сколько было, — это целое. Его находят сложением: 8 + 10.',
+       '10 вёдер осталось, а было больше: ещё 8 вёдер взяли.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

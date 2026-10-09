@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Метр</title>
+<title>Десятки. Числа до 100</title>
 <link rel="stylesheet" href="../lib/engine.css">
 <link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
 </head>
@@ -13,261 +13,265 @@
 <script src="../lib/units.js"></script>
 <script>
 'use strict';
-const CHAPTER = { number: 2, title: 'Метр', minutes: 10, language: 'ru' };
+const CHAPTER = { number: 2, title: 'Десятки. Числа до 100', minutes: 9, language: 'ru', next: '../ch03/' };
 
 /* ---------- chapter drawing helpers ---------- */
 const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
 const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
-// "left ? right": a comparison whose sign is chosen later. Returns the "?" so it can be replaced.
-const cmpLine = (p, l, r, y, t0, tr = t0) => {
-  mline(p, l, 730, y, t0, COL.chalk, 52, 'end');
-  mline(p, r, 870, y, tr, COL.chalk, 52, 'start');
-  const q = T(p, '?', { x: 800, y, size: 52, fill: COL.task, anchor: 'middle', weight: 700, o: 0 });
-  show(q, t0);
-  return q;
-};
-const setSign = (p, q, sign, y, t0) => {
-  hide(q, t0, .2);
-  const s = T(p, sign, { x: 800, y, size: 58, fill: COL.good, anchor: 'middle', weight: 700, o: 0 });
-  put(s, { s: .4 }); pop(s, t0 + .2);
-  return s;
-};
-const DM = 130, X0 = 150;   // one decimetre on the metre strip, and where the strip starts
+// Colours of this chapter: a ten (a bundle, the tens digit) is blue, a single unit (a loose stick, the units digit) is orange.
+const C02_TEN = COL.whole, C02_ONE = COL.task;
+// One loose stick: centred on x, top at y, height h. The group carries the fill so it can be recoloured (c_fill).
+function c02_stick(p, x, y, colr = C02_ONE, h = 120) {
+  const g = G(p, { x, y, o: 0 });
+  g.setAttribute('fill', colr);
+  mk('rect', { x: -5, y: 0, width: 10, height: h, rx: 5, stroke: COL.board, 'stroke-width': 1.5 }, g);
+  return g;
+}
+// The rope around a bundle (centred on x, at height y).
+function c02_rope(p, x, y) {
+  const g = G(p, { o: 0 });
+  path(g, `M${x - 47} ${y}H${x + 47}`, { stroke: COL.board, 'stroke-width': 8 });
+  path(g, `M${x - 47} ${y}H${x + 47}M${x + 40} ${y}l14 -8M${x + 40} ${y}l14 8`, { stroke: COL.chalk, 'stroke-width': 2.5 });
+  return g;
+}
+// A bundle of ten sticks tied with a rope: the same ten sticks at a step of 8 px, centred on x, top at y.
+const C02_DX = i => -36 + i * 8;
+function c02_bundle(p, x, y, colr = C02_TEN, h = 120) {
+  const g = G(p, { x, y, o: 0 });
+  g.setAttribute('fill', colr);
+  for (let i = 0; i < 10; i++) mk('rect', { x: C02_DX(i) - 5, y: 0, width: 10, height: h, rx: 5, stroke: COL.board, 'stroke-width': 1.5 }, g);
+  const r = c02_rope(g, 0, h / 2); put(r, { o: 1 });
+  return g;
+}
+// A two-digit number with the tens digit blue and the units digit orange; the digits meet at x.
+function c02_num(p, n, x, y, t0, size = 110) {
+  const g = G(p, { o: 0 });
+  T(g, String(Math.floor(n / 10)), { x, y, size, fill: C02_TEN, font: MATH, weight: 600, anchor: 'end' });
+  T(g, String(n % 10), { x, y, size, fill: C02_ONE, font: MATH, weight: 600, anchor: 'start' });
+  show(g, t0);
+  return g;
+}
+// A counter whose text changes at given times: steps = [[t, '21'], ...].
+function c02_counter(p, x, y, first, t0, steps, size = 120) {
+  const e = T(p, first, { x, y, size, fill: COL.chalk, font: MATH, weight: 600, anchor: 'middle', o: 0 });
+  show(e, t0);
+  steps.forEach(([t, s]) => { prog(q => { if (q >= 1) e.textContent = s; }, t, .01, lin); pulse(e, t, 1.12); });
+  return e;
+}
 
 /* ---------- beats ---------- */
 const BEATS = [
-  ['intro', 'Метр', (m, D) => {
+  ['intro', 'Десятки. Числа до 100', (m, D) => {
     const g = G(scene, { o: 0, y: 24 });
     T(g, 'Раздел 1 · Глава 2', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
-    T(g, 'Метр', { x: 800, y: 440, size: 96, weight: 600, anchor: 'middle' });
+    T(g, 'Десятки. Числа до 100', { x: 800, y: 440, size: 88, weight: 600, anchor: 'middle' });
     tw(g, { o: 1, y: 0 }, .2, 1.1, out);
-    const r = text(scene, 'большая единица длины', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    const r = text(scene, 'считаем десятками и собираем числа из десятков и единиц', 800, 600, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
     tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
   }],
 
-  ['recall', 'Лесенка единиц', (m) => {
+  ['ten', 'Десяток', (m) => {
     const p = panel(0);
-    const steps = [
-      ['миллиметр', 'мм', COL.rat, null, 'mm'],
-      ['сантиметр', 'см', COL.task, '1 см = 10 мм', 'cm'],
-      ['дециметр', 'дм', COL.whole, '1 дм = 10 см', 'dm'],
-      ['метр', 'м', COL.good, '1 м = 10 дм', 'm'],
-    ];
-    steps.forEach(([name, short, colr, eq, mark], i) => {
-      const x = 130 + i * 350, y = 640 - i * 125;
-      const g = G(p, { o: 0, y: 20 });
-      mk('rect', { x, y, width: 290, height: 96, rx: 14, fill: colr, 'fill-opacity': .18, stroke: colr, 'stroke-width': 3 }, g);
-      const label = T(g, i === 3 ? '?' : name, { x: x + 145, y: y + 48, size: i === 3 ? 48 : 34, fill: colr, weight: 700, anchor: 'middle' });
-      T(g, short, { x: x + 145, y: y + 84, size: 24, fill: COL.dim, anchor: 'middle', o: i === 3 ? 0 : 1 });
-      tw(g, { o: 1, y: 0 }, m(mark), .5, out);
-      if (eq) {
-        const e = M(p, [eq], { x: x + 145, y: y - 30, size: 34, fill: COL.chalk, o: 0 });
-        show(e, i === 3 ? m('name', .3) : m(mark, .4));
-        draw(path(p, `M${x - 40} ${y + 110}Q${x - 30} ${y + 40} ${x - 4} ${y + 40}`, { stroke: COL.faint, 'stroke-width': 3 }, { d: 0 }), m(mark, .1), .5);
-      }
-      if (i === 3) {
-        prog(q => { label.textContent = q < 1 ? '?' : 'метр'; label.setAttribute('font-size', q < 1 ? 48 : 34); }, m('name'), .01, lin);
-        const sh = g.children[2];
-        tw(sh, { o: 1 }, m('name'), .4);
-        pulse(g, m('name', .1), 1.08);
-      }
-    });
-  }],
-
-  ['build', 'Собираем метр', (m) => {
-    const p = panel(0);
-    text(p, 'нарисовано мельче', 1450, 300, .3, { size: 22, fill: COL.faint, anchor: 'end' });
-    const bl = uBlocks(p, X0, 360, 10, DM, 70);
-    bl.forEach((g, i) => {
-      T(g, String(i + 1), { x: X0 + i * DM + DM / 2, y: 407, size: 32, fill: COL.board, weight: 700, anchor: 'middle' });
-      put(g, { o: 0, y: -30 });
-      tw(g, { o: 1, y: 0 }, m('d' + (i + 1)), .4, out);
-    });
-    text(p, '1 дм', X0 + DM / 2, 340, m('d1', .3), { size: 26, fill: COL.dim, anchor: 'middle' });
-    uBracket(p, X0, X0 + 10 * DM, 470, '1 метр', COL.good, m('meter'), { size: 40 });
-    mline(p, '1 м = 10 дм', 800, 680, m('rule'), COL.chalk, 76);
-    draw(path(p, 'M560 705H1040', { stroke: COL.good, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
-  }],
-
-  ['cm100', 'В метре сто сантиметров', (m) => {
-    const p = panel(0);
-    const bl = uBlocks(p, X0, 360, 10, DM, 70);
-    bl.forEach(g => show(g, .2, .5));
-    let d = '';
-    for (let i = 0; i < 100; i++) if (i % 10) d += `M${X0 + i * DM / 10} 362v${i % 5 ? 18 : 28}`;
-    draw(path(p, d, { stroke: COL.board, 'stroke-width': 2.5 }, { d: 0 }), m('split'), 1.2);
-    text(p, '10 см', X0 + DM / 2, 470, m('split', .6), { size: 26, fill: COL.task, anchor: 'middle', weight: 600 });
-    for (let i = 1; i <= 10; i++) {
-      const n = T(p, String(i * 10), { x: X0 + i * DM, y: 335, size: 32, fill: COL.task, weight: 700, anchor: 'middle', o: 0 });
-      put(n, { s: .4 }); pop(n, m('t' + i));
-      const c = path(p, `M${X0 + i * DM} 350v10`, { stroke: COL.task, 'stroke-width': 3 });
-      put(c, { o: 0 }); show(c, m('t' + i));
+    const H = 150, y = 200, cx = 800;
+    const sticks = [];
+    for (let i = 0; i < 10; i++) {
+      const s = c02_stick(p, 350 + i * 100, y, C02_ONE, H);
+      show(s, i ? m('s' + (i + 1)) : .3, .3);
+      const n = T(p, String(i + 1), { x: 350 + i * 100, y: y + H + 50, size: 34, fill: C02_ONE, weight: 700, anchor: 'middle', o: 0 });
+      show(n, i ? m('s' + (i + 1)) : m('s1'), .3);
+      hide(n, m('tie'), .4);
+      if (!i) pulse(s, m('s1'), 1.15);
+      sticks.push(s);
     }
-    uBracket(p, X0, X0 + 10 * DM, 530, '1 м', COL.good, m('rule'), { size: 36 });
-    mline(p, '1 м = 100 см', 800, 700, m('rule', .3), COL.chalk, 76);
+    sticks.forEach((s, i) => tw(s, { x: cx + C02_DX(i) }, m('tie', .2), .9, io));
+    const rope = c02_rope(p, cx, y + H / 2);
+    show(rope, m('tie', 1.2), .4);
+    sticks.forEach(s => tw(s, { c_fill: C02_TEN }, m('name'), .6));
+    text(p, '1 десяток', cx, y + H + 60, m('name', .2), { size: 40, fill: C02_TEN, anchor: 'middle', weight: 700 });
+    mline(p, '1 дес. = 10 ед.', 800, 640, m('rule'), COL.chalk, 76);
+    draw(path(p, 'M540 668H1060', { stroke: C02_TEN, 'stroke-width': 4 }, { d: 0 }), m('rule', .6), .6);
+  }],
+
+  ['tens', 'Счёт десятками', (m) => {
+    const p = panel(0);
+    const xs = i => 170 + i * 140;
+    for (let i = 0; i < 10; i++) {
+      const b = c02_bundle(p, xs(i), 150);
+      put(b, { y: 120 });
+      tw(b, { o: 1, y: 150 }, i ? m('t' + (i + 1)) : .3, .45, out);
+      const n = T(p, String((i + 1) * 10), { x: xs(i), y: 335, size: 40, fill: COL.chalk, font: MATH, weight: 700, anchor: 'middle', o: 0 });
+      put(n, { s: .4 }); pop(n, m('t' + (i + 1), .2));
+      text(p, `${i + 1} дес.`, xs(i), 375, m('t' + (i + 1), .3), { size: 22, fill: COL.dim, anchor: 'middle' });
+    }
+    uBracket(p, 100, 1500, 410, '10 дес. = 100 = 1 сотня', COL.good, m('hund'), { size: 40 });
+    [3, 8, 9].forEach((i, k) => {
+      const c = mk('rect', { x: xs(i) - 50, y: 296, width: 100, height: 52, rx: 26, fill: 'none', stroke: COL.task, 'stroke-width': 4 }, p);
+      put(c, { o: 0 }); show(c, m('odd', .4 + k * .5), .3);
+    });
+    [['40', 'сорок'], ['90', 'девяносто'], ['100', 'сто']].forEach(([n, w], k) => {
+      mline(p, n, 360 + k * 420, 640, m('odd', .4 + k * .5), COL.chalk, 52, 'end');
+      text(p, `— ${w}`, 380 + k * 420, 638, m('odd', .4 + k * .5), { size: 40, fill: COL.task, weight: 600 });
+    });
+  }],
+
+  ['calc', 'Десятки как единицы', (m) => {
+    const p = panel(0);
+    text(p, 'Десятки считают так же, как единицы', 800, 90, .2, { size: 36, anchor: 'middle', weight: 600 });
+    // 3 tens + 1 ten
+    for (let i = 0; i < 3; i++) { const b = c02_bundle(p, 160 + i * 115, 140); show(b, m('a'), .4); }
+    const add = c02_bundle(p, 160 + 3 * 115, 140);
+    put(add, { x: 160 + 3 * 115 + 140 }); tw(add, { o: 1, x: 160 + 3 * 115 }, m('a2'), .7, out);
+    pulse(add, m('a2', .8), 1.08);
+    mline(p, '3 дес. + 1 дес. = 4 дес.', 1150, 190, m('a3'), COL.chalk, 48);
+    mline(p, '30 + 10 = 40', 1150, 270, m('a4'), C02_TEN, 56);
+    text(p, 'как 3 + 1 = 4', 1150, 320, m('a4', .8), { size: 26, fill: COL.dim, anchor: 'middle' });
+    draw(path(p, 'M100 370H1500', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('b', -.4), .6);
+    // 5 tens − 2 tens
+    const five = [];
+    for (let i = 0; i < 5; i++) { const b = c02_bundle(p, 160 + i * 115, 420); show(b, m('b'), .4); five.push(b); }
+    five.slice(3).forEach(b => tw(b, { x: st(b).x + 180, o: .18 }, m('b2'), .8));
+    mline(p, '5 дес. − 2 дес. = 3 дес.', 1150, 470, m('b3'), COL.chalk, 48);
+    mline(p, '50 − 20 = 30', 1150, 550, m('b3', 1.6), C02_TEN, 56);
+    text(p, 'как 5 − 2 = 3', 1150, 600, m('b3', 2.4), { size: 26, fill: COL.dim, anchor: 'middle' });
   }],
 
   ['q1', 'Проверь себя', () => {
     const p = panel(0);
-    const bl = uBlocks(p, 500, 140, 10, 60, 40);
-    bl.forEach(g => show(g, .2, .4));
-    uBracket(p, 500, 1100, 220, '1 м', COL.good, .4);
-  }, { ask: done => quiz({ x: 330, y: 300, w: 940, cls: 'side' }, [{
-    id: 'c-meter', prompt: ['Заполни окошки.'],
+    text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
+    mline(p, '1 дес. = 10', 120, 300, .3, C02_TEN, 46, 'start');
+    const b = c02_bundle(p, 230, 360); show(b, .4, .4);
+  }, { ask: done => quiz({ x: 560, y: 90, w: 960, cls: 'side' }, [{
+    id: 'c-tens', prompt: ['Посчитай десятками и заполни окошки.'],
     build: blanks([
-      { parts: ['1 м = ', { box: '10' }, ' дм'], why: 'Метр складывается из 10 дециметров.', hint: 'Вспомни, сколько дециметров мы собрали в метр.' },
-      { parts: ['1 м = ', { box: '100' }, ' см'], why: 'В каждом из 10 дециметров по 10 см: 10, 20, … 100.', hint: 'В каждом дециметре 10 см. Считай десятками.' },
-      { parts: ['1 дм = ', { box: '10' }, ' см'], why: 'В дециметре 10 сантиметров.', hint: 'Это ты знаешь с первого класса: дециметр — это сколько сантиметров?' },
-      { parts: ['1 дм = ', { box: '100' }, ' мм'], why: '1 дм = 10 см, в каждом сантиметре 10 мм: 100 мм.', hint: '1 дм = 10 см, а 1 см = 10 мм. Считай десятками миллиметров.' },
+      { parts: ['4 дес. + 5 дес. = ', { box: '9' }, ' дес.'], why: 'Как 4 + 5 = 9: девять десятков.', hint: 'Считай десятки, как простые единицы: 4 + 5.' },
+      { parts: ['40 + 50 = ', { box: '90' }, ''], why: '4 дес. + 5 дес. = 9 дес. — это 90.', hint: '40 — это 4 десятка, 50 — 5 десятков. Сколько всего десятков?' },
+      { parts: ['90 − 40 = ', { box: '50' }, ''], why: '9 дес. − 4 дес. = 5 дес. — это 50.', hint: '90 — это 9 десятков. Убери 4 десятка.' },
+      { parts: ['60 + 30 = ', { box: '90' }, ''], why: '6 дес. + 3 дес. = 9 дес. — это 90.', hint: 'Как 6 + 3, только десятками.' },
+      { parts: ['100 = ', { box: '10' }, ' дес.'], why: 'Сто — это десять десятков, одна сотня.', hint: 'Вспомни, сколько пучков мы насчитали до ста.' },
     ]),
   }], done) }],
 
-  ['where', 'Что меряют в метрах', (m) => {
+  ['build', 'Десятки и единицы', (m) => {
     const p = panel(0);
-    text(p, 'Длинное и высокое меряют в метрах', 800, 120, .2, { size: 36, anchor: 'middle', weight: 600 });
-    // a room, seen from above
-    const room = G(p, { o: 0 });
-    path(room, 'M120 330H460V600H120Z', { stroke: COL.whole, 'stroke-width': 4, fill: COL.whole, 'fill-opacity': .08 });
-    path(room, 'M380 600H440', { stroke: COL.board, 'stroke-width': 6 });
-    path(room, 'M380 600Q380 545 440 545', { stroke: COL.whole, 'stroke-width': 2, 'stroke-dasharray': '6 6' });
-    path(room, 'M120 650H460M135 640L120 650L135 660M445 640L460 650L445 660', { stroke: COL.task, 'stroke-width': 3 });
-    T(room, 'длина комнаты', { x: 290, y: 700, size: 28, fill: COL.task, anchor: 'middle', weight: 600 });
-    T(room, 'комната', { x: 290, y: 475, size: 30, fill: COL.dim, anchor: 'middle' });
-    show(room, m('room'), .6);
-    // a pupil next to a metre stick: 1 m = 300 px
-    const kid = G(p, { o: 0 });
-    const foot = 780, U = 300;
-    for (let i = 0; i < 10; i++) mk('rect', { x: 700, y: foot - (i + 1) * U / 10, width: 34, height: U / 10 - 2, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, kid);
-    mk('rect', { x: 700, y: foot - 1.3 * U, width: 34, height: .3 * U - 2, fill: COL.chalk, 'fill-opacity': .25, stroke: COL.chalk, 'stroke-width': 1.5 }, kid);
-    const H = 1.3 * U, cx = 800, top = foot - H;
-    mk('circle', { cx, cy: top + 36, r: 34, fill: 'none', stroke: COL.chalk, 'stroke-width': 4 }, kid);
-    path(kid, `M${cx} ${top + 70}V${top + 250}M${cx} ${top + 105}L${cx - 50} ${top + 190}M${cx} ${top + 105}L${cx + 50} ${top + 190}M${cx} ${top + 250}L${cx - 36} ${foot}M${cx} ${top + 250}L${cx + 36} ${foot}`, { stroke: COL.chalk, 'stroke-width': 5 });
-    path(kid, `M640 ${foot}H880`, { stroke: COL.faint, 'stroke-width': 3 });
-    uVBrace(kid, 670, foot - U, foot, COL.good);
-    T(kid, '1 м', { x: 660, y: foot - U / 2 + 10, size: 30, fill: COL.good, weight: 700, anchor: 'end' });
-    uVBrace(kid, 670, top, foot - U - 4, COL.task);
-    T(kid, '30 см', { x: 660, y: top + 55, size: 28, fill: COL.task, weight: 700, anchor: 'end' });
-    show(kid, m('kid'), .6);
-    // a three-storey house
-    const hs = G(p, { o: 0 });
-    path(hs, 'M1150 780V450H1420V780Z', { stroke: COL.rat, 'stroke-width': 4, fill: COL.rat, 'fill-opacity': .08 });
-    path(hs, 'M1130 450L1285 350L1440 450', { stroke: COL.rat, 'stroke-width': 4 });
-    for (let f = 0; f < 3; f++) for (let w = 0; w < 3; w++) mk('rect', { x: 1175 + w * 80, y: 475 + f * 105, width: 50, height: 55, fill: COL.int, 'fill-opacity': .35, stroke: COL.chalk, 'stroke-width': 2 }, hs);
-    T(hs, 'около 10 м', { x: 1285, y: 830, size: 30, fill: COL.rat, weight: 700, anchor: 'middle' });
-    show(hs, m('house'), .6);
-    text(p, 'рост около 1 м 30 см', 800, 840, m('kid', 1.5), { size: 28, fill: COL.dim, anchor: 'middle' });
-  }],
-
-  ['q2', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 200, y: 70, w: 1200, cls: 'side' }, [{
-    id: 'c-units', prompt: ['Какие единицы длины пропущены? Выбери для каждой строки.'],
-    build: grid([
-      { parts: ['Высота парты — 60 …'], ans: ['cm'], why: '60 см — это высота парты. 60 мм — меньше ладони, а 60 дм — это целых 6 метров.' },
-      { parts: ['Рост Дюймовочки — 25 …'], ans: ['mm'], why: 'Дюймовочка крошечная: 25 мм — это всего 2 с половиной сантиметра.' },
-      { parts: ['Высота трёхэтажного дома — 10 …'], ans: ['m'], why: 'Дом намного выше человека: около 10 м.' },
-      { parts: ['Длина коридора — 12 …'], ans: ['m'], why: 'Коридор длинный: его меряют в метрах.' },
-      { parts: ['Длина тетради — 2 …'], ans: ['dm'], why: 'Тетрадь длиной 2 дм, то есть 20 см.' },
-    ], [['mm', 'мм'], ['cm', 'см'], ['dm', 'дм'], ['m', 'м']], { multi: false, text: true }),
-  }], done) }],
-
-  ['compare', 'Сравниваем длины', (m) => {
-    const p = panel(0);
-    const U = 12;
-    const q1 = cmpLine(p, '1 м', '99 см', 150, .3);
-    const wrong = mline(p, '1 < 99', 1310, 150, m('wrong'), COL.bad, 44);
-    draw(path(p, 'M1235 140L1385 122', { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), m('wrong', 1.2), .4);
-    void wrong;
-    const A = G(p, { o: 0 });
-    for (let i = 0; i < 10; i++) mk('rect', { x: 200 + i * 10 * U + 1, y: 200, width: 10 * U - 2, height: 34, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, A);
-    show(A, m('cm'), .5);
-    text(p, '100 см', 185, 228, m('cm', .2), { size: 28, fill: COL.int, weight: 700, anchor: 'end' });
-    const B = G(p, { o: 0 });
-    mk('rect', { x: 200, y: 250, width: 99 * U, height: 34, rx: 3, fill: COL.rat, 'fill-opacity': .55, stroke: COL.rat, 'stroke-width': 2 }, B);
-    show(B, m('cm', .4), .5);
-    text(p, '99 см', 185, 278, m('cm', .5), { size: 28, fill: COL.rat, weight: 700, anchor: 'end' });
-    setSign(p, q1, '>', 150, m('ans'));
-    const diff = mk('rect', { x: 200 + 99 * U - 3, y: 194, width: U + 6, height: 46, fill: 'none', stroke: COL.good, 'stroke-width': 4 }, p);
-    put(diff, { o: 0 }); show(diff, m('ans', .5));
-    text(p, '1 см', 200 + 99.5 * U, 320, m('ans', .8), { size: 26, fill: COL.good, anchor: 'middle', weight: 700 });
-    // three metres two decimetres
-    draw(path(p, 'M100 370H1500', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('two', -.4), .6);
-    const W = 40;
-    const q2 = cmpLine(p, '3 м 2 дм', '32 дм', 460, m('two'), m('two', 1.5));
-    const C = G(p, { o: 0 });
-    for (let i = 0; i < 3; i++) mk('rect', { x: 200 + i * 10 * W + 1, y: 510, width: 10 * W - 2, height: 40, fill: i % 2 ? COL.task : COL.int, 'fill-opacity': .7 }, C);
-    mk('rect', { x: 200 + 30 * W + 1, y: 510, width: 2 * W - 2, height: 40, fill: COL.whole, 'fill-opacity': .7 }, C);
-    show(C, m('two', .3), .5);
-    const Dg = G(p, { o: 0 });
-    mk('rect', { x: 200, y: 570, width: 32 * W, height: 40, rx: 3, fill: COL.rat, 'fill-opacity': .5, stroke: COL.rat, 'stroke-width': 2 }, Dg);
-    for (let i = 1; i < 32; i++) path(Dg, `M${200 + i * W} 570v40`, { stroke: COL.board, 'stroke-width': 2, 'stroke-opacity': .7 });
-    show(Dg, m('two', 1.5), .5);
-    ['10 дм', '20 дм', '30 дм'].forEach((s, i) => {
-      const t = T(p, s, { x: 200 + (i + 1) * 10 * W, y: 660, size: 28, fill: COL.task, weight: 700, anchor: 'middle', o: 0 });
-      put(t, { s: .4 }); pop(t, m('m3', 1.2 + i * .7));
-      const c = path(p, `M${200 + (i + 1) * 10 * W} 505v-14`, { stroke: COL.task, 'stroke-width': 3 }); put(c, { o: 0 }); show(c, m('m3', 1.2 + i * .7));
+    const H = 150, y = 230;
+    [300, 420].forEach(x => { const b = c02_bundle(p, x, y, C02_TEN, H); show(b, .3, .4); });
+    const cnt = c02_counter(p, 1200, 380, '20', m('two'), [[m('u1', .3), '21'], [m('u2', .3), '22'], [m('u3', .3), '23']]);
+    [560, 620, 680].forEach((x, i) => {
+      const s = c02_stick(p, x, y, C02_ONE, H);
+      put(s, { y: y - 40 }); tw(s, { o: 1, y }, m('u' + (i + 1)), .4, out);
     });
-    text(p, '+ 2 дм', 200 + 31 * W, 498, m('plus'), { size: 28, fill: COL.whole, weight: 700, anchor: 'middle' });
-    setSign(p, q2, '=', 460, m('eq'));
-    pulse(C, m('eq', .3), 1.02); pulse(Dg, m('eq', .3), 1.02);
-    mline(p, '3 м 2 дм = 32 дм', 800, 760, m('eq', .8), COL.chalk, 48);
+    uBracket(p, 250, 470, y + H + 30, '2 дес.', C02_TEN, m('split'), { size: 34 });
+    uBracket(p, 540, 700, y + H + 30, '3 ед.', C02_ONE, m('split', .8), { size: 34 });
+    mline(p, '2 дес. 3 ед. = 23', 800, 680, m('split', 1.6), COL.chalk, 60);
+    hide(cnt, m('write'), .3);
+    c02_num(p, 23, 1200, 380, m('write'), 120);
+    text(p, 'десятки', 1185, 440, m('write', .4), { size: 30, fill: C02_TEN, anchor: 'end', weight: 600 });
+    text(p, 'единицы', 1215, 440, m('units'), { size: 30, fill: C02_ONE, anchor: 'start', weight: 600 });
   }],
 
-  ['q3', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 220, y: 60, w: 1160, cls: 'side' }, [{
-    id: 'c-compare', prompt: ['Какой знак поставить: <, = или >? Сначала переведи в одинаковые единицы.'],
-    build: grid([
-      { parts: ['1 м  ○  9 дм'], ans: ['gt'], why: '1 м = 10 дм, а 10 дм больше 9 дм.' },
-      { parts: ['10 см  ○  1 м'], ans: ['lt'], why: '1 м = 100 см, а 10 см меньше 100 см.' },
-      { parts: ['1 м  ○  100 см'], ans: ['eq'], why: 'В метре ровно 100 см.' },
-      { parts: ['2 м 8 дм  ○  30 дм'], ans: ['lt'], why: '2 м 8 дм = 20 дм + 8 дм = 28 дм, а 28 меньше 30.' },
-      { parts: ['2 дм 3 см  ○  23 см'], ans: ['eq'], why: '2 дм 3 см = 20 см + 3 см = 23 см.' },
-      { parts: ['1 дм 2 см  ○  14 см'], ans: ['lt'], why: '1 дм 2 см = 12 см, а 12 меньше 14.' },
-    ], [['lt', '<', null, '<'], ['eq', '=', null, '='], ['gt', '>', null, '>']], { multi: false, text: true }),
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    const y = 110;
+    const L = [c02_bundle(p, 300, y)];
+    for (let i = 0; i < 4; i++) L.push(c02_stick(p, 400 + i * 40, y));
+    L.forEach(e => show(e, .2, .4));
+    const Rt = [];
+    for (let i = 0; i < 4; i++) Rt.push(c02_bundle(p, 900 + i * 105, y));
+    Rt.push(c02_stick(p, 1335, y));
+    Rt.forEach(e => show(e, .3, .4));
+    text(p, 'слева', 410, 280, .4, { size: 28, fill: COL.dim, anchor: 'middle' });
+    text(p, 'справа', 1110, 280, .4, { size: 28, fill: COL.dim, anchor: 'middle' });
+  }, { ask: done => quiz({ x: 200, y: 320, w: 1200, cls: 'side' }, [{
+    id: 'c-sticks', prompt: ['Сколько палочек на каждом рисунке? Сколько это десятков и единиц?'],
+    build: blanks([
+      { parts: ['Слева: ', { box: '1' }, ' дес. ', { box: '4' }, ' ед. — это ', { box: '14' }], why: 'Один пучок — десяток, и 4 палочки: 14.', hint: 'Пучок — это один десяток. Отдельные палочки — единицы.' },
+      { parts: ['Справа: ', { box: '4' }, ' дес. ', { box: '1' }, ' ед. — это ', { box: '41' }], why: 'Четыре пучка — 40, и одна палочка: 41.', hint: 'Посчитай пучки десятками: 10, 20, 30, 40. И добавь одну палочку.' },
+    ]),
   }], done) }],
 
-  ['task', 'Задача про ткань', (m) => {
+  ['next', 'Новый десяток', (m) => {
     const p = panel(0);
-    const U = 200, x0 = 330;
-    const bar = (y, from, n, colr, t0) => {
-      const g = G(p, { o: 0, x: -20 });
-      for (let i = 0; i < n; i++) mk('rect', { x: x0 + (from + i) * U + 1, y, width: U - 2, height: 56, rx: 4, fill: colr, 'fill-opacity': .55, stroke: colr, 'stroke-width': 2 }, g);
-      tw(g, { o: 1, x: 0 }, t0, .5, out);
-      return g;
-    };
-    text(p, 'Юбка', x0 - 30, 268, m('skirt'), { size: 32, anchor: 'end', weight: 600 });
-    bar(230, 0, 2, COL.whole, m('skirt'));
-    text(p, '2 м', x0 + U, 215, m('skirt', .4), { size: 30, fill: COL.whole, anchor: 'middle', weight: 700 });
-    text(p, 'Платье', x0 - 30, 398, m('dress'), { size: 32, anchor: 'end', weight: 600 });
-    bar(360, 0, 2, COL.whole, m('dress'));
-    bar(360, 2, 1, COL.task, m('dress', 1.2));
-    const dash = path(p, `M${x0 + 2 * U} 220V430`, { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 6' }); put(dash, { o: 0 }); show(dash, m('dress', .8));
-    text(p, 'на 1 м больше', x0 + 2.5 * U, 455, m('dress', 1.4), { size: 26, fill: COL.task, anchor: 'middle', weight: 600 });
-    draw(path(p, `M${x0 + 3 * U + 60} 230H${x0 + 3 * U + 80}V416H${x0 + 3 * U + 60}`, { stroke: COL.good, 'stroke-width': 3 }, { d: 0 }), m('ask'), .5);
-    text(p, '? м всего', x0 + 3 * U + 100, 334, m('ask', .3), { size: 32, fill: COL.good, weight: 700 });
-    mline(p, '1)  2 + 1 = 3 (м) — на платье', x0, 570, m('s1'), COL.chalk, 44, 'start');
-    const lab3 = T(p, '3 м', { x: x0 + 1.5 * U, y: 345, size: 30, fill: COL.task, weight: 700, anchor: 'middle', o: 0 }); show(lab3, m('s1', 1.5));
-    mline(p, '2)  2 + 3 = 5 (м) — всего', x0, 650, m('s2'), COL.chalk, 44, 'start');
-    text(p, 'Ответ: 5 м ткани.', x0, 750, m('ans'), { size: 40, fill: COL.good, weight: 700 });
+    const H = 150, y = 230, bx = 460;
+    [220, 340].forEach(x => { const b = c02_bundle(p, x, y, C02_TEN, H); show(b, .3, .4); });
+    const cnt = c02_counter(p, 1300, 380, '29', .4, [[m('n30'), '30']]);
+    const sticks = [];
+    for (let i = 0; i < 10; i++) {
+      const s = c02_stick(p, 480 + i * 60, y, C02_ONE, H);
+      if (i < 9) show(s, .4, .4);
+      else { put(s, { y: y - 50 }); tw(s, { o: 1, y }, m('add'), .5, out); pulse(s, m('add', .5), 1.1); }
+      sticks.push(s);
+    }
+    hide(text(p, '2 дес. 9 ед.', 800, 160, m('n29', .5), { size: 30, fill: COL.dim, anchor: 'middle' }), m('n30'), .4);
+    const box = mk('rect', { x: 445, y: y - 18, width: 610, height: H + 36, rx: 14, fill: 'none', stroke: C02_ONE, 'stroke-width': 3, 'stroke-dasharray': '10 8' }, p);
+    put(box, { o: 0 }); show(box, m('ten'), .3); hide(box, m('tie', .2), .3);
+    hide(text(p, '10 ед.', 750, y + H + 60, m('ten', .2), { size: 32, fill: C02_ONE, anchor: 'middle', weight: 700 }), m('tie', .2), .3);
+    sticks.forEach((s, i) => tw(s, { x: bx + C02_DX(i) }, m('tie', .3), .9, io));
+    show(c02_rope(p, bx, y + H / 2), m('tie', 1.3), .4);
+    sticks.forEach(s => tw(s, { c_fill: C02_TEN }, m('n30'), .6));
+    text(p, '3 дес.', 340, y + H + 60, m('n30', .3), { size: 32, fill: C02_TEN, anchor: 'middle', weight: 700 });
+    void cnt;
+    mline(p, '29 + 1 = 30', 800, 560, m('n30', .5), COL.chalk, 52);
+    mline(p, '39 + 1 = 40', 800, 650, m('more'), COL.chalk, 52);
+    mline(p, '99 + 1 = 100', 800, 740, m('last'), COL.good, 52);
   }],
 
-  ['q4', 'Проверь себя', () => {
+  ['q3', 'Проверь себя', () => {
     const p = panel(0);
     text(p, 'Помни:', 120, 220, .2, { size: 30, fill: COL.dim });
-    mline(p, '1 м = 100 см', 120, 300, .3, COL.good, 46, 'start');
-    mline(p, '1 дм = 10 см', 120, 380, .4, COL.whole, 46, 'start');
-  }, { ask: done => quiz({ x: 560, y: 160, w: 960, cls: 'side' }, [{
-    id: 'c-diff', prompt: ['На сколько сантиметров 1 м больше, чем 1 дм? А чем 1 см?'],
+    mline(p, '19 + 1 = 20', 120, 300, .3, COL.chalk, 46, 'start');
+    mline(p, '29 + 1 = 30', 120, 380, .4, COL.chalk, 46, 'start');
+  }, { ask: done => quiz({ x: 560, y: 120, w: 960, cls: 'side' }, [{
+    id: 'c-next', prompt: ['Какое число пропущено? Каждое следующее число на 1 больше.'],
     build: blanks([
-      { parts: ['1 м − 1 дм = ', { box: '90' }, ' см'], why: '1 м = 100 см, 1 дм = 10 см. 100 − 10 = 90.', hint: 'Переведи всё в сантиметры: 1 м = 100 см, 1 дм = 10 см.' },
-      { parts: ['1 м − 1 см = ', { box: '99' }, ' см'], why: '100 см − 1 см = 99 см.', hint: '1 м = 100 см. Сколько останется, если убрать 1 см?' },
+      { parts: ['38,  39,  ', { box: '40' }, ',  41,  42'], why: '39 + 1 = 40: девять единиц и ещё одна — новый десяток.', hint: 'Какое число идёт сразу после 39?' },
+      { parts: ['87,  88,  89,  ', { box: '90' }, ',  91'], why: '89 + 1 = 90: получился девятый десяток.', hint: 'После 89 палочек добавь одну — свяжется новый пучок.' },
+      { parts: ['96,  97,  98,  99,  ', { box: '100' }], why: '99 + 1 = 100: десять десятков — одна сотня.', hint: 'Что получится, если к 99 прибавить 1?' },
+      { parts: ['59 + 1 = ', { box: '60' }], why: '5 дес. 9 ед. и ещё одна единица — это 6 дес., то есть 60.', hint: 'Девять единиц и одна — это новый десяток.' },
     ]),
+  }], done) }],
+
+  ['order', 'Место цифры', (m) => {
+    const p = panel(0);
+    c02_num(p, 51, 400, 190, .3, 110);
+    c02_num(p, 15, 1200, 190, .4, 110);
+    text(p, 'одни и те же цифры, а числа разные', 800, 75, m('same'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    const H = 90, y = 250;
+    for (let i = 0; i < 5; i++) { const b = c02_bundle(p, 160 + i * 100, y, C02_TEN, H); show(b, m('a', i * .15), .4); }
+    show(c02_stick(p, 690, y, C02_ONE, H), m('a', .9), .4);
+    text(p, '5 дес. 1 ед.', 400, 390, m('a', 1), { size: 32, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    show(c02_bundle(p, 1030, y, C02_TEN, H), m('b'), .4);
+    for (let i = 0; i < 5; i++) show(c02_stick(p, 1130 + i * 50, y, C02_ONE, H), m('b', .3 + i * .15), .4);
+    text(p, '1 дес. 5 ед.', 1200, 390, m('b', 1), { size: 32, fill: COL.chalk, anchor: 'middle', weight: 600 });
+    text(p, 'Важно, на каком месте стоит цифра.', 800, 470, m('rule'), { size: 34, fill: COL.task, anchor: 'middle', weight: 600 });
+    draw(path(p, 'M100 520H1500', { stroke: COL.faint, 'stroke-width': 2, 'stroke-dasharray': '6 10' }, { d: 0 }), m('trap', -.4), .6);
+    text(p, '«двадцать три»', 340, 640, m('trap'), { size: 44, anchor: 'middle', weight: 600 });
+    mline(p, '203', 800, 645, m('wrong'), COL.bad, 72);
+    draw(path(p, 'M720 650L880 600', { stroke: COL.bad, 'stroke-width': 6 }, { d: 0 }), m('wrong', 1.2), .4);
+    text(p, 'лишний ноль', 800, 710, m('wrong', 1.6), { size: 26, fill: COL.bad, anchor: 'middle' });
+    c02_num(p, 23, 1230, 650, m('right'), 90);
+    text(p, '2 дес. 3 ед.', 1230, 720, m('right', .8), { size: 28, fill: COL.dim, anchor: 'middle' });
+    const ok = path(p, 'M1330 610l18 20l36 -44', { stroke: COL.good, 'stroke-width': 6 }, { d: 0 });
+    draw(ok, m('right', 1.6), .4);
+  }],
+
+  ['q4', 'Проверь себя', (m) => {
+    const p = panel(0);
+    text(p, '«сорок семь»', 800, 200, .3, { size: 56, anchor: 'middle', weight: 600 });
+  }, { ask: done => quiz({ x: 300, y: 290, w: 1000, cls: 'side' }, [{
+    id: 'c-write', prompt: ['Как записать цифрами число «сорок семь»?'],
+    build: choice([['47'], ['407'], ['74']], 0,
+      'Сорок — это 4 десятка, семь — 7 единиц. Сначала пишут десятки, потом единицы: 47.',
+      [null, 'Ноль здесь лишний. Сорок семь — это 4 дес. 7 ед.: две цифры, 4 и 7.',
+       '74 — это семьдесят четыре: 7 десятков. А в числе «сорок семь» 4 десятка — их пишут первыми.']),
   }], done) }],
 
   ['wrap', 'Главное', (m) => {
     const p = panel(0);
     text(p, 'Запомним главное', 200, 170, .2, { size: 40, fill: COL.dim, weight: 600 });
-    [['Метр — большая единица длины.', 'w1', false],
-     ['1 м = 10 дм', 'w2', true],
-     ['1 м = 100 см', 'w3', true],
-     ['Прежде чем сравнивать, переведи длины в одинаковые единицы.', 'w4', false]].forEach(([str, mark, big], i) => {
+    [['1 дес. = 10 ед.', 'w1', true],
+     ['Десятки считают так же, как единицы: 10, 20, 30 … 100.', 'w2', false],
+     ['10 дес. = 100 = 1 сотня', 'w3', true],
+     ['В записи числа сначала десятки, потом единицы: 23.', 'w4', false]].forEach(([str, mark, big], i) => {
       const g = G(p, { x: -16, y: 290 + i * 130, o: 0 });
       mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
       T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
@@ -277,22 +281,23 @@ const BEATS = [
   }],
 
   ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
-    id: 'p-convert', prompt: ['Заполни окошки.'],
+    id: 'p-numbers', prompt: ['Заполни окошки.'],
     build: blanks([
-      { parts: ['1 м = ', { box: '100' }, ' см'], why: 'В метре 100 сантиметров.', hint: 'Вспомни: 10, 20, 30 … — сколько сантиметров в метре?' },
-      { parts: ['4 м = ', { box: '40' }, ' дм'], why: 'В каждом метре 10 дм, а в четырёх — 40 дм.', hint: 'В 1 м — 10 дм. Сколько в 4 м?' },
-      { parts: ['1 м 5 дм = ', { box: '15' }, ' дм'], why: '1 м = 10 дм, и ещё 5 дм: 15 дм.', hint: 'Переведи метр в дециметры и прибавь 5 дм.' },
-      { parts: ['50 дм = ', { box: '5' }, ' м'], why: 'В 50 дм пять раз по 10 дм — это 5 м.', hint: 'Сколько раз по 10 дм в 50 дм?' },
-      { parts: ['60 см = ', { box: '6' }, ' дм'], why: 'В 60 см шесть раз по 10 см — это 6 дм.', hint: 'В 1 дм — 10 см.' },
+      { parts: ['2 дес. 9 ед. = ', { box: '29' }], why: '2 десятка — 20, и 9 единиц: 29.', hint: 'Сначала пиши десятки, потом единицы.' },
+      { parts: ['9 дес. 2 ед. = ', { box: '92' }], why: '9 десятков — 90, и 2 единицы: 92.', hint: 'Десятков 9 — первая цифра 9.' },
+      { parts: ['5 дес. = ', { box: '50' }], why: 'Пять десятков — пятьдесят. Единиц нет, поэтому в конце 0.', hint: 'Считай десятками: 10, 20, 30, 40, 50.' },
+      { parts: ['10 дес. = ', { box: '100' }], why: 'Десять десятков — это сто, одна сотня.', hint: 'Что получится после 9 десятков — 90?' },
+      { parts: ['восемьдесят один — ', { box: '81' }], why: 'Восемьдесят — 8 десятков, один — 1 единица: 81.', hint: 'Восемьдесят — это 8 десятков.' },
+      { parts: ['63 = ', { box: '6' }, ' дес. ', { box: '3' }, ' ед.'], why: 'Первая цифра 6 — десятки, вторая 3 — единицы.', hint: 'Первая цифра показывает десятки, вторая — единицы.' },
     ]),
   }], done, 'Итоговое задание   1 из 2') }],
 
   ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
-    id: 'p-ribbon', prompt: ['Ленточка была длиной 1 м. От неё отрезали 30 см. Сколько сантиметров ленточки осталось?'],
-    build: choice([['70 см'], ['29 см'], ['1 м 30 см']], 0,
-      '1 м = 100 см. 100 см − 30 см = 70 см.',
-      [null, 'Нельзя вычитать 30 − 1: это разные единицы. Сначала переведи 1 м в сантиметры — это 100 см.',
-       'Отрезали — значит, ленточка стала короче. Нужно вычитать: 100 см − 30 см.']),
+    id: 'p-stamps', prompt: ['У Васи было 3 десятка марок. Он подарил другу 10 марок. Сколько марок у Васи осталось?'],
+    build: choice([['20 марок'], ['2 марки'], ['40 марок']], 0,
+      '3 десятка — это 30 марок, 10 марок — один десяток. 30 − 10 = 20.',
+      [null, '3 десятка марок — это 30 марок, а не 3. 30 − 10 = 20.',
+       'Подарил — значит, марок стало меньше. Нужно вычитать: 30 − 10 = 20.']),
   }], done, 'Итоговое задание   2 из 2') }],
 
   ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],

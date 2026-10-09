@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Неизвестное уменьшаемое и вычитаемое</title>
+<link rel="stylesheet" href="../lib/engine.css">
+<link rel="expect" href="#bar" blocking="render"><!-- hold the first frame until the player exists, so the page transition can run -->
+</head>
+<body>
+<script src="../lib/engine.js"></script>
+<script src="audio/ru/timings.js"></script>
+<script src="../lib/units.js"></script>
+<script>
+'use strict';
+const CHAPTER = { number: 12, title: 'Неизвестное уменьшаемое и вычитаемое', minutes: 10, language: 'ru' };
+
+/* ---------- chapter drawing helpers ---------- */
+const text = (p, str, x, y, t0, { size = 30, fill = COL.chalk, anchor = 'start', weight = 500 } = {}) => { const e = T(p, str, { x, y, size, fill, anchor, weight, o: 0 }); show(e, t0); return e; };
+const mline = (p, str, x, y, t0, fill = COL.chalk, size = 56, anchor = 'middle') => { const e = M(p, [str], { x, y, size, fill, anchor, o: 0 }); show(e, t0); return e; };
+// Colours of this chapter: the whole is blue (COL.whole), the two parts are pink (COL.rat) and orange (COL.task).
+const PA = COL.rat, PB = COL.task, WH = COL.whole;
+// A schematic drawing (схематический чертёж): a segment x1–x2 split at xm, arcs over the parts, an arc under the whole.
+// lab = { a, b, w } label strings; t = { line, a, b, w } times. Returns the label elements { a, b, w }.
+function c12_scheme(p, x1, xm, x2, y, lab, t, { size = 40 } = {}) {
+  draw(path(p, `M${x1} ${y}H${x2}`, { stroke: COL.chalk, 'stroke-width': 5 }, { d: 0 }), t.line, .7);
+  for (const x of [x1, x2]) { const k = path(p, `M${x} ${y - 14}v28`, { stroke: COL.chalk, 'stroke-width': 4 }); put(k, { o: 0 }); show(k, t.line + .5, .3); }
+  const mid = path(p, `M${xm} ${y - 14}v28`, { stroke: COL.chalk, 'stroke-width': 4 }); put(mid, { o: 0 }); show(mid, t.mid ?? Math.min(t.a, t.b), .3);
+  const part = (xa, xb, colr, str, t0) => {
+    draw(path(p, `M${xa + 3} ${y}H${xb - 3}`, { stroke: colr, 'stroke-width': 9 }, { d: 0 }), t0, .5);
+    draw(path(p, `M${xa + 4} ${y - 12}Q${(xa + xb) / 2} ${y - 72} ${xb - 4} ${y - 12}`, { stroke: colr, 'stroke-width': 3 }, { d: 0 }), t0, .5);
+    return text(p, str, (xa + xb) / 2, y - 58, t0 + .3, { size, fill: colr, anchor: 'middle', weight: 700 });
+  };
+  const L = { a: part(x1, xm, PA, lab.a, t.a), b: part(xm, x2, PB, lab.b, t.b) };
+  draw(path(p, `M${x1 + 4} ${y + 12}Q${(x1 + x2) / 2} ${y + 92} ${x2 - 4} ${y + 12}`, { stroke: WH, 'stroke-width': 3 }, { d: 0 }), t.w, .6);
+  L.w = text(p, lab.w, (x1 + x2) / 2, y + 100, t.w + .3, { size, fill: WH, anchor: 'middle', weight: 700 });
+  return L;
+}
+// Replace a label ("?" → the answer) in place.
+function c12_swap(p, el, str, t0) {
+  hide(el, t0, .2);
+  const s = st(el), n = T(p, str, { x: s.x, y: s.y, size: +el.getAttribute('font-size'), fill: el.getAttribute('fill'), anchor: el.getAttribute('text-anchor'), weight: 700, o: 0 });
+  put(n, { s: .4 }); pop(n, t0 + .2);
+  return n;
+}
+// A short record of the task in a frame: rows = [[text, t0, colour]].
+function c12_record(p, x, y, w, rows) {
+  const box = mk('rect', { x: x - 28, y: y - 52, width: w, height: rows.length * 60 + 34, rx: 8, fill: 'none', stroke: COL.faint, 'stroke-width': 2.5 }, p);
+  put(box, { o: 0 }); show(box, rows[0][1]);
+  return rows.map(([str, t0, fill], i) => text(p, str, x, y + i * 60, t0, { size: 36, fill: fill || COL.chalk }));
+}
+// A wrong calculation, then struck out in red.
+function c12_wrong(p, str, x, y, t0, tCross, size = 50) {
+  const e = mline(p, str, x, y, t0, COL.bad, size), w = e._w;
+  draw(path(p, `M${x - w / 2 - 14} ${y - 6}L${x + w / 2 + 14} ${y - size * .55}`, { stroke: COL.bad, 'stroke-width': 5 }, { d: 0 }), tCross, .4);
+  return e;
+}
+// A pencil standing upright: tip at (x, y - 30), body from y to y + 120. Starts hidden; its body colour can change.
+function c12_pencil(p, x, y, colr) {
+  const g = G(p, { x, y, o: 0 });
+  g._body = mk('rect', { x: -11, y: 0, width: 22, height: 120, rx: 3, fill: colr, 'fill-opacity': .8, stroke: colr, 'stroke-width': 2 }, g);
+  path(g, 'M-11 0L0 -30L11 0Z', { fill: '#e9cf9f', stroke: COL.chalk, 'stroke-width': 1.5 });
+  g._lead = path(g, 'M-4 -19L0 -30L4 -19Z', { fill: colr, stroke: colr, 'stroke-width': 1 });
+  return g;
+}
+const c12_tint = (pen, colr, t0) => { tw(pen._body, { c_fill: colr, c_stroke: colr }, t0, .4); tw(pen._lead, { c_fill: colr, c_stroke: colr }, t0, .4); };
+
+/* ---------- beats ---------- */
+const BEATS = [
+  ['intro', 'Неизвестное уменьшаемое и вычитаемое', (m, D) => {
+    const g = G(scene, { o: 0, y: 24 });
+    T(g, 'Раздел 2 · Глава 12', { x: 800, y: 330, size: 28, fill: COL.dim, anchor: 'middle' });
+    T(g, 'Неизвестное уменьшаемое', { x: 800, y: 430, size: 80, weight: 600, anchor: 'middle' });
+    T(g, 'и вычитаемое', { x: 800, y: 520, size: 80, weight: 600, anchor: 'middle' });
+    tw(g, { o: 1, y: 0 }, .2, 1.1, out);
+    const r = text(scene, 'Сколько было? Сколько взяли?', 800, 640, m('sub'), { size: 34, fill: COL.dim, anchor: 'middle' });
+    tw(g, { o: 0, y: -24 }, D - .9, .8); hide(r, D - .9, .8);
+  }],
+
+  ['scheme', 'Целое и части', (m) => {
+    const p = panel(0);
+    const box = mk('rect', { x: 250, y: 190, width: 820, height: 100, rx: 10, fill: WH, 'fill-opacity': .08, stroke: WH, 'stroke-width': 3 }, p);
+    put(box, { o: 0 }); show(box, .2);
+    const pens = Array.from({ length: 10 }, (_, i) => { const pen = c12_pencil(p, 300 + i * 80, 150, WH); show(pen, .3 + i * .05, .3); return pen; });
+    const was = text(p, 'было 10', 230, 250, m('box'), { size: 34, fill: WH, anchor: 'end', weight: 700 });
+    pens.slice(6).forEach((pen, k) => {
+      const t0 = m('take') + k * .12;
+      c12_tint(pen, PB, t0);
+      tw(pen, { y: 100 }, t0 + .1, .35, out);
+      tw(pen, { x: st(pen).x + 400 }, t0 + .45, .6);
+      tw(pen, { y: 150 }, t0 + 1.05, .3);
+    });
+    text(p, 'взяли 4', 1300, 330, m('take', 1.2), { size: 34, fill: PB, anchor: 'middle', weight: 700 });
+    pens.slice(0, 6).forEach(pen => c12_tint(pen, PA, m('left')));
+    text(p, 'осталось 6', 500, 330, m('left', .2), { size: 34, fill: PA, anchor: 'middle', weight: 700 });
+    void was;
+    // the schematic drawing: 100 px for one pencil
+    const L = c12_scheme(p, 300, 900, 1300, 560, { a: '6', b: '4', w: '10' }, { line: m('line'), mid: m('parts'), a: m('pl'), b: m('pt'), w: m('whole') }, { size: 44 });
+    void L;
+    text(p, 'целое', 800, 705, m('whole', .6), { size: 28, fill: WH, anchor: 'middle' });
+    text(p, 'осталось', 600, 445, m('pl', .2), { size: 26, fill: PA, anchor: 'middle' });
+    text(p, 'взяли', 1100, 445, m('pt', .2), { size: 26, fill: PB, anchor: 'middle' });
+    mline(p, '6 + 4 = 10', 800, 800, m('sum'), COL.chalk, 60);
+  }],
+
+  ['taken', 'Сколько взяли?', (m) => {
+    const p = panel(0);
+    text(p, 'Было 10 карандашей, взяли несколько, осталось 6. Сколько взяли?', 900, 80, .2, { size: 30, fill: COL.dim, anchor: 'middle' });
+    c12_record(p, 150, 190, 400, [['Было — 10 к.', m('rec'), WH], ['Взяли — ?', m('rec', 1.2), PB], ['Осталось — 6 к.', m('rec', 2.4), PA]]);
+    // 75 px for one pencil
+    const L = c12_scheme(p, 700, 1150, 1450, 300, { a: '6 к.', b: '?', w: '10 к.' }, { line: m('sch'), a: m('sch', 1), b: m('q'), w: m('sch', .4) });
+    pulse(L.b, m('q', .6), 1.4);
+    c12_wrong(p, '10 + 6 = 16', 400, 530, m('wrong'), m('wrong', 2.6));
+    text(p, 'взяли больше, чем было?', 400, 590, m('wrong', 2.6), { size: 28, fill: COL.bad, anchor: 'middle' });
+    text(p, 'Ищем часть: из целого вычитаем другую часть.', 1075, 510, m('right'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    mline(p, '10 − 6 = 4 (к.)', 1075, 610, m('calc'), COL.chalk, 60);
+    c12_swap(p, L.b, '4 к.', m('ans'));
+    text(p, 'Ответ: взяли 4 карандаша.', 800, 760, m('ans', .3), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q1', 'Проверь себя', () => {
+    const p = panel(0);
+    c12_record(p, 170, 150, 420, [['Было — 12 овец', .2, WH], ['Убежали — ?', .3, PB], ['Осталось — 7 овец', .4, PA]]);
+    c12_scheme(p, 720, 1140, 1440, 220, { a: '7', b: '?', w: '12' }, { line: .2, a: .5, b: .6, w: .7 });
+  }, { ask: done => quiz({ x: 200, y: 420, w: 1200, cls: 'side' }, [{
+    id: 'c-sheep', prompt: ['В загоне было 12 овец. Несколько овец убежали, и осталось 7. Сколько овец убежало?'],
+    build: blanks([{ parts: ['Убежало ', { box: '5' }, ' овец'],
+      why: 'Неизвестна часть, поэтому из целого вычитаем другую часть: 12 − 7 = 5.',
+      hint: 'Целое — 12 овец, одна часть — 7. Чтобы найти другую часть, вычитай.' }]),
+  }], done) }],
+
+  ['whole', 'Сколько было?', (m) => {
+    const p = panel(0);
+    text(p, 'У Тани были значки. 2 она подарила, осталось 5. Сколько было?', 900, 80, .2, { size: 30, fill: COL.dim, anchor: 'middle' });
+    c12_record(p, 150, 190, 420, [['Было — ?', m('ask'), WH], ['Подарила — 2 зн.', m('ask', 1.6), PB], ['Осталось — 5 зн.', m('ask', 3.2), PA]]);
+    // 100 px for one badge
+    const L = c12_scheme(p, 750, 1250, 1450, 300, { a: '5 зн.', b: '2 зн.', w: '?' }, { line: m('sch'), a: m('p5'), b: m('p2'), w: m('q') });
+    pulse(L.w, m('q', .6), 1.4);
+    c12_wrong(p, '5 − 2 = 3', 400, 530, m('wrong'), m('wrong', 3));
+    text(p, 'было меньше, чем осталось?', 400, 590, m('wrong', 3), { size: 28, fill: COL.bad, anchor: 'middle' });
+    text(p, 'Ищем целое: складываем части.', 1100, 510, m('right'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    mline(p, '5 + 2 = 7 (зн.)', 1100, 610, m('calc'), COL.chalk, 60);
+    c12_swap(p, L.w, '7 зн.', m('ans'));
+    text(p, 'Ответ: у Тани было 7 значков.', 800, 760, m('ans', .3), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q2', 'Проверь себя', () => {
+    const p = panel(0);
+    // 60 px for one apple
+    const A = G(p, { o: 0 }), B = G(p, { o: 0 });
+    c12_scheme(A, 160, 340, 520, 640, { a: '3 ябл.', b: '?', w: '6 ябл.' }, { line: 0, a: 0, b: 0, w: 0 }, { size: 32 });
+    c12_scheme(B, 850, 1210, 1390, 640, { a: '6 ябл.', b: '3 ябл.', w: '?' }, { line: 0, a: 0, b: 0, w: 0 }, { size: 32 });
+    show(A, .2); show(B, .4);
+    S.c12s = [A, B];
+  }, { ask: done => quiz({ x: 200, y: 60, w: 1200, cls: 'side' }, [{
+    id: 'c-scheme', prompt: ['В вазе были яблоки. Съели 3 яблока, и осталось 6. Сколько яблок было? Щёлкни по схеме, которая подходит к этой задаче.'],
+    build: pickEls([{ box: [110, 520, 460, 260], el: S.c12s[0], label: 'Левая схема' }, { box: [800, 520, 640, 260], el: S.c12s[1], label: 'Правая схема' }], 1,
+      'Части — 6 яблок осталось и 3 съели, а целое неизвестно: 6 + 3 = 9 яблок.',
+      () => 'Здесь целое — 6 яблок. Но 6 яблок только осталось, а было больше: целое неизвестно.'),
+  }], done) }],
+
+  ['added', 'Долили воды', (m) => {
+    const p = panel(0);
+    text(p, 'Было 8 л воды, долили ещё, стало 10 л. Сколько долили?', 900, 80, .2, { size: 30, fill: COL.dim, anchor: 'middle' });
+    c12_record(p, 150, 190, 400, [['Было — 8 л', m('ask'), PA], ['Долили — ?', m('ask', 1.8), PB], ['Стало — 10 л', m('ask', 3.4), WH]]);
+    // the tank: 24 px for one litre
+    const U = 24, bot = 440, tx = 640, tw0 = 240;
+    const tank = path(p, `M${tx} ${bot - 12 * U}V${bot}H${tx + tw0}V${bot - 12 * U}`, { stroke: COL.chalk, 'stroke-width': 4 });
+    put(tank, { o: 0 }); show(tank, .3);
+    const w8 = mk('rect', { x: tx + 3, y: bot - 8 * U, width: tw0 - 6, height: 8 * U - 2, fill: PA, 'fill-opacity': .45 }, p);
+    put(w8, { o: 0 }); show(w8, m('ask'));
+    const w2 = mk('rect', { x: tx + 3, y: bot - 10 * U, width: tw0 - 6, height: 2 * U, fill: PB, 'fill-opacity': .55 }, p);
+    put(w2, { o: 0 }); show(w2, m('ask', 3));
+    text(p, '8 л', tx + tw0 / 2, bot - 4 * U + 12, m('ask', .3), { size: 32, fill: COL.chalk, anchor: 'middle', weight: 700 });
+    const qq = text(p, '?', tx + tw0 / 2, bot - 9 * U + 12, m('ask', 3.2), { size: 32, fill: COL.board, anchor: 'middle', weight: 700 });
+    const br = uVBrace(p, tx - 40, bot - 10 * U, bot, WH);
+    put(br, { o: 0 }); show(br, m('whole'));
+    text(p, '10 л', tx - 50, bot - 5 * U + 12, m('whole'), { size: 32, fill: WH, anchor: 'end', weight: 700 });
+    text(p, 'нарисовано мельче', tx + tw0, bot + 40, m('ask', 1), { size: 22, fill: COL.faint, anchor: 'end' });
+    // 100 px for one litre
+    const L = c12_scheme(p, 300, 1100, 1300, 620, { a: '8 л', b: '?', w: '10 л' }, { line: m('whole', -.4), a: m('parts'), b: m('q'), w: m('whole') });
+    c12_wrong(p, '8 + 10 = 18', 1230, 160, m('wrong'), m('wrong', 4.4), 46);
+    text(p, 'Ищем часть — вычитаем.', 1230, 260, m('right'), { size: 30, fill: COL.dim, anchor: 'middle' });
+    mline(p, '10 − 8 = 2 (л)', 1230, 350, m('calc'), COL.chalk, 54);
+    c12_swap(p, L.b, '2 л', m('ans'));
+    c12_swap(p, qq, '2 л', m('ans'));
+    text(p, 'Ответ: долили 2 л.', 800, 820, m('ans', .3), { size: 40, fill: COL.good, anchor: 'middle', weight: 700 });
+  }],
+
+  ['q3', 'Проверь себя', () => { panel(0); }, { ask: done => quiz({ x: 200, y: 60, w: 1200, cls: 'side' }, [{
+    id: 'c-action', prompt: ['Каким действием решается задача: сложением или вычитанием?'],
+    build: grid([
+      { parts: ['Было ? овец, убежали 3, осталось 8.'], ans: ['plus'], why: 'Неизвестно целое — складываем части: 3 + 8 = 11.' },
+      { parts: ['Было 18 машин, уехали ?, осталось 10.'], ans: ['minus'], why: 'Неизвестна часть — из целого вычитаем: 18 − 10 = 8.' },
+      { parts: ['Было ? р., потратили 7 р., осталось 9 р.'], ans: ['plus'], why: 'Неизвестно, сколько было, — это целое: 7 + 9 = 16.' },
+      { parts: ['Было 9 л, долили ?, стало 15 л.'], ans: ['minus'], why: 'Целое — 15 л, неизвестна часть: 15 − 9 = 6.' },
+      { parts: ['Было 15 машин, уехали 8, осталось ?'], ans: ['minus'], why: 'Неизвестна часть — вычитаем: 15 − 8 = 7.' },
+    ], [['plus', '+  сложить', null, '+'], ['minus', '−  вычесть', null, '-']], { multi: false, text: true }),
+  }], done) }],
+
+  ['wrap', 'Главное', (m) => {
+    const p = panel(0);
+    text(p, 'Запомним главное', 200, 150, .2, { size: 40, fill: COL.dim, weight: 600 });
+    [['Части вместе составляют целое.', 'w1'],
+     ['Неизвестно целое — складываем части.', 'w2'],
+     ['Неизвестна часть — из целого вычитаем другую часть.', 'w3'],
+     ['Начерти схему и найди на ней целое.', 'w4']].forEach(([str, mark], i) => {
+      const g = G(p, { x: -16, y: 270 + i * 130, o: 0 });
+      mk('circle', { cx: 200, cy: -12, r: 26, fill: COL.task }, g);
+      T(g, String(i + 1), { x: 200, y: -1, size: 30, fill: COL.board, weight: 700, anchor: 'middle' });
+      T(g, str, { x: 260, size: 38, weight: 600 });
+      tw(g, { o: 1, x: 0 }, m(mark), .6);
+    });
+  }],
+
+  ['final1', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-cars', prompt: ['На стоянке были машины. Одни уехали, другие остались. Заполни окошки.'],
+    build: blanks([
+      { parts: ['Было 15, уехали 8, осталось ', { box: '7' }], why: 'Неизвестна часть: 15 − 8 = 7.', hint: 'Целое — 15 машин. Одна часть — 8. Найди другую часть вычитанием.' },
+      { parts: ['Было ', { box: '12' }, ', уехали 9, осталось 3'], why: 'Неизвестно целое: 9 + 3 = 12.', hint: 'Сколько было — это целое. Сложи части: те, что уехали, и те, что остались.' },
+      { parts: ['Было 18, уехали ', { box: '8' }, ', осталось 10'], why: 'Неизвестна часть: 18 − 10 = 8.', hint: 'Из целого (18) вычти ту часть, что осталась.' },
+      { parts: ['Было ', { box: '11' }, ', уехали 3, осталось 8'], why: 'Неизвестно целое: 3 + 8 = 11.', hint: 'Неизвестно, сколько было. Сложи обе части.' },
+    ]),
+  }], done, 'Итоговое задание   1 из 2') }],
+
+  ['final2', 'Итоговое задание', () => { panel(0); }, { ask: done => quiz(SCREEN, [{
+    id: 'p-money', prompt: ['Оля купила тетрадь за 6 р. и ручку за 5 р. У неё осталось ещё 4 р. Сколько денег было у Оли до покупок?'],
+    build: choice([['15 р.'], ['7 р.'], ['11 р.']], 0,
+      'Оля потратила 6 + 5 = 11 р. и ещё 4 р. у неё осталось. Всё вместе — целое: 11 + 4 = 15 р.',
+      [null, 'Здесь вычли 4 р. Но 4 р. — это тоже часть Олиных денег. Части надо сложить: 6 + 5 + 4 = 15.',
+       '11 р. Оля потратила. Но у неё ещё остались 4 р. — прибавь их: 11 + 4 = 15.']),
+  }], done, 'Итоговое задание   2 из 2') }],
+
+  ['finish', 'Готово', () => { panel(0); }, { ask: finishCard }],
+].map(([id, title, run, extra]) => ({ id, title, run, ...extra }));
+
+boot();
+</script>
+</body>
+</html>

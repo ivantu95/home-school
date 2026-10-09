@@ -42,3 +42,41 @@ function uBracket(p, x1, x2, y, label, colr, t0, { up = false, size = 30 } = {})
   draw(path(p, `M${x1} ${y + k}V${y}H${x2}V${y + k}`, { stroke: colr, 'stroke-width': 3 }, { d: 0 }), t0, .5);
   if (label) show(T(p, label, { x: (x1 + x2) / 2, y: up ? y - 14 : y + 36, size, fill: colr, weight: 600, anchor: 'middle', o: 0 }), t0 + .3);
 }
+// ---- Tens and ones (from ch02). Tens are blue (COL.whole), ones orange (COL.task) throughout the book. ----
+// One stick, top-left corner at (x - 5, y), height h. Starts hidden (o: 0); show it with show()/pop().
+function uStick(p, x, y, colr = COL.task, h = 120) {
+  const g = G(p, { x, y, o: 0 });
+  g.setAttribute('fill', colr);
+  mk('rect', { x: -5, y: 0, width: 10, height: h, rx: 5, stroke: COL.board, 'stroke-width': 1.5 }, g);
+  return g;
+}
+// The rope around a bundle, centred on x at height y.
+function uRope(p, x, y) {
+  const g = G(p, { o: 0 });
+  path(g, `M${x - 47} ${y}H${x + 47}`, { stroke: COL.board, 'stroke-width': 8 });
+  path(g, `M${x - 47} ${y}H${x + 47}M${x + 40} ${y}l14 -8M${x + 40} ${y}l14 8`, { stroke: COL.chalk, 'stroke-width': 2.5 });
+  return g;
+}
+// A bundle of ten sticks (a ten) centred on x, top at y, about 94 px wide. Starts hidden.
+function uBundle(p, x, y, colr = COL.whole, h = 120) {
+  const g = G(p, { x, y, o: 0 });
+  g.setAttribute('fill', colr);
+  for (let i = 0; i < 10; i++) mk('rect', { x: -41 + i * 8, y: 0, width: 10, height: h, rx: 5, stroke: COL.board, 'stroke-width': 1.5 }, g);
+  put(uRope(g, 0, h / 2), { o: 1 });
+  return g;
+}
+// A two-digit number: tens digit blue, ones digit orange; the digits meet at x. Shown at t0.
+function uNum(p, n, x, y, t0, size = 110) {
+  const g = G(p, { o: 0 });
+  T(g, String(Math.floor(n / 10)), { x, y, size, fill: COL.whole, font: MATH, weight: 600, anchor: 'end' });
+  T(g, String(n % 10), { x, y, size, fill: COL.task, font: MATH, weight: 600, anchor: 'start' });
+  show(g, t0);
+  return g;
+}
+// A text whose content changes at given times: steps = [[t, 'new text'], ...] (deterministic for seeking).
+function uCounter(p, x, y, first, t0, steps, { size = 120, fill = COL.chalk } = {}) {
+  const e = T(p, first, { x, y, size, fill, font: MATH, weight: 600, anchor: 'middle', o: 0 });
+  show(e, t0);
+  steps.forEach(([t, s]) => { prog(q => { if (q >= 1) e.textContent = s; }, t, .01, lin); pulse(e, t, 1.12); });
+  return e;
+}
