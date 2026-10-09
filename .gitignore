@@ -1,0 +1,4 @@
+# Papermorph: исходники и извлечённые страницы не публикуются и не попадают в git
+*.pdf
+curriculum/*/pages/
+lessons/*/*/*.timings.json
